@@ -13,3 +13,6 @@ frontend/dist/
 
 # Demo data (re-create any time with: python scripts/generate_demo_data.py)
 samples/generated/
+
+# Files waiting for fixes
+backend/uploads/

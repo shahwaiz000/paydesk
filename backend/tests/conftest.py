@@ -27,6 +27,7 @@ pd.DataFrame([
 os.environ["DATABASE_URL"] = f"sqlite:///{(TEST_DIR / 'test.db').as_posix()}"
 os.environ["SEED_DEMO_DATA"] = "true"
 os.environ["DEMO_DATA_DIR"] = str(TEST_DIR)
+os.environ["UPLOAD_DIR"] = str(TEST_DIR / "uploads")
 
 from fastapi.testclient import TestClient  # noqa: E402
 

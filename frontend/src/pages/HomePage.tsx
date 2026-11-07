@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 
@@ -48,9 +49,12 @@ export default function HomePage() {
           <Stat label="Paid in cash" value={data.cash_drivers} />
           <Stat label="Paid by bank" value={data.bank_drivers} />
         </div>
-        <div className="mt-8 rounded-2xl border border-dashed border-indigo-300 bg-indigo-50 p-6 text-indigo-800">
-          Next: upload the month's files and calculate salaries.
-        </div>
+        <Link
+          to="/months"
+          className="mt-8 block rounded-2xl border border-dashed border-indigo-300 bg-indigo-50 p-6 text-indigo-800 hover:bg-indigo-100"
+        >
+          Go to <b>Payroll months</b> to upload this month's files →
+        </Link>
       </div>
     );
   }

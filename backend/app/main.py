@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import models  # noqa: F401  (registers the tables)
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, overview
+from .routers import auth, months, overview
 from .seed import seed_demo
 
 
@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="PayDesk API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="PayDesk API", version="0.3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(overview.router)
+app.include_router(months.router)
 
 
 @app.get("/api/health")

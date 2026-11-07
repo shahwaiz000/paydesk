@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     token_minutes: int = 480                 # login lasts 8 hours
     seed_demo_data: bool = False             # fill the database with demo users/drivers
     demo_data_dir: Path = PROJECT_DIR / "samples" / "generated"
+    upload_dir: Path = BACKEND_DIR / "uploads"         # files waiting for fixes
     frontend_origin: str = "http://localhost:5174"
 
 

@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { NavLink, Navigate, Outlet } from "react-router-dom";
 import { ROLE_LABELS } from "../api";
 import { useAuth } from "../auth";
 
@@ -19,6 +19,25 @@ export default function Layout() {
             <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
               {ROLE_LABELS[user.role]}
             </span>
+            {(user.role === "accountant" || user.role === "finance_manager") && (
+              <nav className="ml-6 flex gap-1 text-sm">
+                {[
+                  { to: "/", label: "Home" },
+                  { to: "/months", label: "Payroll months" },
+                ].map((l) => (
+                  <NavLink
+                    key={l.to}
+                    to={l.to}
+                    end={l.to === "/"}
+                    className={({ isActive }) =>
+                      `rounded-lg px-3 py-1.5 ${isActive ? "bg-slate-100 font-semibold text-slate-900" : "text-slate-600 hover:bg-slate-50"}`
+                    }
+                  >
+                    {l.label}
+                  </NavLink>
+                ))}
+              </nav>
+            )}
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-slate-600">{user.full_name}</span>

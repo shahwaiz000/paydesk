@@ -13,6 +13,7 @@ Output folder: paydesk/samples/generated/
     adjustments.xlsx           - File 3: deductions + bonuses
     vehicles.xlsx              - File 4: who drove which vehicle, when
     drivers_with_errors.xlsx   - File 1 with planted mistakes (for testing checks)
+    adjustments_with_errors.xlsx - File 3 with planted mistakes
 """
 
 import calendar
@@ -275,6 +276,17 @@ errors_df.loc[bank_rows[0], "iban"] = None                                    # 
 errors_df.loc[10, "station"] = None                                           # missing station
 errors_df.loc[20, "joining_date"] = None                                      # missing joining date
 errors_df.loc[30, "payment_method"] = "Cheque"                                # unknown payment method
+errors_df.loc[40, "payment_method"] = "Csah"                                  # typo -> PayDesk suggests Cash
+errors_df.loc[50, "joining_date"] = "31/02/2026"                              # impossible date
+
+# Errors version of File 3 (adjustments)
+adj_err = adjustments_df.copy()
+first_driver_row = adj_err.index[adj_err["driver_id"].notna()][0]
+good_id = adj_err.loc[first_driver_row, "driver_id"]
+adj_err.loc[first_driver_row, "driver_id"] = good_id[1:]           # "D" missing -> PayDesk suggests it
+adj_err.loc[adj_err.index[adj_err["type"] == "Traffic fine"][:3], "type"] = "Trafic fine"  # typo
+adj_err.loc[adj_err.index[adj_err["type"] == "Other"][0], "note"] = None                  # Other without note
+adj_err.loc[adj_err.index[adj_err["type"] == "Advance"][0], "amount"] = -300               # negative amount
 
 # ---------------------------------------------------------------- save
 drivers_df.to_excel(OUT_DIR / "drivers.xlsx", index=False)
@@ -282,6 +294,7 @@ deliveries_df.to_csv(OUT_DIR / "deliveries.csv", index=False)
 adjustments_df.to_excel(OUT_DIR / "adjustments.xlsx", index=False)
 vehicles_df.to_excel(OUT_DIR / "vehicles.xlsx", index=False)
 errors_df.to_excel(OUT_DIR / "drivers_with_errors.xlsx", index=False)
+adj_err.to_excel(OUT_DIR / "adjustments_with_errors.xlsx", index=False)
 
 print(f"Month: {calendar.month_name[MONTH]} {YEAR}")
 print(f"Stations:     {len(stations)}")

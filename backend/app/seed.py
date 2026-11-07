@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import ACCOUNTANT, CASHIER, DRIVER, FINANCE_MANAGER, Driver, Station, User
+from .models import ACCOUNTANT, CASHIER, DRIVER, FINANCE_MANAGER, Driver, PayrollMonth, Station, User
 from .security import hash_password
 
 DEMO_PASSWORD = "demo123"
@@ -40,6 +40,7 @@ def seed_demo(db: Session) -> None:
         return  # already has data - never overwrite
 
     password_hash = hash_password(DEMO_PASSWORD)
+    db.add(PayrollMonth(period="2026-10"))   # the demo data month
     db.add_all([
         User(username="accountant", full_name="Payroll Accountant", password_hash=password_hash, role=ACCOUNTANT),
         User(username="manager", full_name="Finance Manager", password_hash=password_hash, role=FINANCE_MANAGER),

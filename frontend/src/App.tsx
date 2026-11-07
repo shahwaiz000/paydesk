@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
+import MonthPage from "./pages/MonthPage";
+import MonthsPage from "./pages/MonthsPage";
 
 export default function App() {
   return (
@@ -9,6 +11,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Layout />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/months" element={<MonthsPage />} />
+        <Route path="/months/:id" element={<MonthPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
