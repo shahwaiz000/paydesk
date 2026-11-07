@@ -82,6 +82,7 @@ def test_full_upload_flow(client):
     f = upload(client, h, month_id, "adjustments", "adj.xlsx", xlsx([
         {"plate_no": "1234 ABC", "type": "Traffic fine", "amount": 300, "date": "2026-10-12", "reference": "TF-1"},
         {"driver_id": "D2", "type": "Advance", "amount": 200, "date": "2026-10-20", "reference": "ADV-1"},
+        {"driver_id": "D3", "type": "Lost parcel", "amount": 1000, "date": "2026-10-08", "reference": "SA1"},
     ]))
     assert f["status"] == "imported", f["issues"]
     assert f["summary"]["fines_matched_by_plate"] == 1
@@ -93,3 +94,51 @@ def test_full_upload_flow(client):
 def test_cashier_cannot_upload(client):
     h = login(client, "ruh-01", "demo123")
     assert client.get("/api/months", headers=h).status_code == 403
+
+
+def test_salary_calculation(client):
+    """Worked examples - checked by hand."""
+    h = login(client, "accountant", "demo123")
+    month_id = client.get("/api/months", headers=h).json()[0]["id"]
+    res = client.post(f"/api/months/{month_id}/calculate", headers=h)
+    assert res.status_code == 200, res.text
+    assert res.json()["drivers"] == 3
+
+    def slip(driver):
+        return client.get(f"/api/months/{month_id}/salaries/{driver}", headers=h).json()
+
+    # D1: full month. 1,500 + 300x2 + 200x3 = 2,700. Fine 300 (matched by plate) -> 2,400
+    d1 = slip("D1")
+    assert (d1["fixed_pay"], d1["prepaid_pay"], d1["cod_pay"], d1["gross"]) == (1500, 600, 600, 2700)
+    assert d1["deductions_applied"] == 300 and d1["net"] == 2400
+    assert d1["lines"][0]["plate_no"] == "1234 ABC"
+
+    # D2: joined 15 Oct -> 17 days. 1,500/30x17 = 850 + 200 + 150 = 1,200. Advance 200 -> 1,000
+    d2 = slip("D2")
+    assert d2["days_worked"] == 17 and d2["fixed_pay"] == 850
+    assert d2["gross"] == 1200 and d2["net"] == 1000
+    assert "joiner" in d2["flags"]
+
+    # D3: left 20 Oct -> 20 days. 1,000 + 300 + 270 = 1,570. Lost parcel 1,000 but cap is 50% = 785
+    d3 = slip("D3")
+    assert d3["gross"] == 1570
+    assert d3["deductions_applied"] == 785 and d3["carried_forward"] == 215 and d3["net"] == 785
+    assert "capped" in d3["flags"] and "leaver" in d3["flags"]
+
+    summary = client.get(f"/api/months/{month_id}/summary", headers=h).json()
+    assert summary["net"] == 2400 + 1000 + 785
+    assert summary["bank_net"] == 2400
+    assert summary["stations"][0]["cash_needed"] == 785  # JED-01: D3 is cash
+
+
+def test_cashier_sees_own_station_payslip_only(client):
+    h = login(client, "ruh-01", "demo123")
+    month_id = 1
+    assert client.get(f"/api/months/{month_id}/salaries/D2", headers=h).status_code == 200
+    assert client.get(f"/api/months/{month_id}/salaries/D3", headers=h).status_code == 403
+
+
+def test_driver_sees_only_own_payslip(client):
+    h = login(client, "d2", "1234")
+    assert client.get("/api/months/1/salaries/D2", headers=h).json()["net"] == 1000
+    assert client.get("/api/months/1/salaries/D1", headers=h).status_code == 403

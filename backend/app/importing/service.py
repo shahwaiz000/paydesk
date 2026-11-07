@@ -19,6 +19,7 @@ from .checks import (
     CheckContext, CheckResult, apply_fixes, check_adjustments, check_deliveries, check_drivers,
     check_vehicles,
 )
+from ..payroll.engine import clear_salaries
 from .columns import FILE_FIELDS, match_columns
 
 MAX_ISSUES_SAVED = 300
@@ -93,8 +94,8 @@ def handle_upload(db: Session, month: PayrollMonth, kind: str, filename: str,
                   content: bytes, username: str) -> FileUpload:
     if kind not in FILE_KINDS:
         raise UploadBlocked(f"Unknown file type '{kind}'")
-    if month.status == "locked":
-        raise UploadBlocked("This month is locked - files can't be changed")
+    if month.status in ("approved", "locked"):
+        raise UploadBlocked("This month is approved/locked - files can't be changed")
     latest = latest_uploads(month)
     for needed in NEEDS_FIRST[kind]:
         if needed not in latest or latest[needed].status != "imported":
@@ -179,6 +180,7 @@ def _check_and_store(db: Session, month: PayrollMonth, upload: FileUpload,
     else:
         upload.status = "imported"
         STORERS[upload.kind](db, month, result.df)
+        clear_salaries(db, month.id)   # files changed -> old salaries are no longer valid
 
     latest = latest_uploads(month)
     latest[upload.kind] = upload

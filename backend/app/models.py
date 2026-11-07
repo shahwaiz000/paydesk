@@ -144,3 +144,72 @@ class Adjustment(Base):
     day: Mapped[date | None] = mapped_column(Date)
     reference: Mapped[str | None] = mapped_column(String(50))
     note: Mapped[str | None] = mapped_column(String(200))
+
+
+# ------------------------------------------------------------------ Stage 4
+
+class PayrollSetting(Base):
+    """Salary rules. One row. The accountant can change these (no code change needed)."""
+
+    __tablename__ = "payroll_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fixed_salary: Mapped[float] = mapped_column(Float, default=1500)
+    prepaid_rate: Mapped[float] = mapped_column(Float, default=2)
+    cod_rate: Mapped[float] = mapped_column(Float, default=3)
+    proration_days: Mapped[int] = mapped_column(Integer, default=30)       # joiners/leavers: fixed / 30 x days
+    deduction_cap_pct: Mapped[float] = mapped_column(Float, default=50)    # max % of gross deducted
+    unusual_change_pct: Mapped[float] = mapped_column(Float, default=30)   # flag if net moves more than this
+
+
+class Salary(Base):
+    """One driver's salary for one month."""
+
+    __tablename__ = "salaries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month_id: Mapped[int] = mapped_column(ForeignKey("payroll_months.id"), index=True)
+    driver_id: Mapped[str] = mapped_column(ForeignKey("drivers.id"), index=True)
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id"), index=True)
+    payment_method: Mapped[str] = mapped_column(String(10))
+    days_worked: Mapped[int] = mapped_column(Integer)
+    full_month: Mapped[bool] = mapped_column(Boolean)
+    fixed_pay: Mapped[float] = mapped_column(Float)
+    prepaid_count: Mapped[int] = mapped_column(Integer)
+    prepaid_pay: Mapped[float] = mapped_column(Float)
+    cod_count: Mapped[int] = mapped_column(Integer)
+    cod_pay: Mapped[float] = mapped_column(Float)
+    bonuses: Mapped[float] = mapped_column(Float)
+    gross: Mapped[float] = mapped_column(Float)
+    deductions_due: Mapped[float] = mapped_column(Float)       # this month + carried in
+    deductions_applied: Mapped[float] = mapped_column(Float)   # after the 50% cap
+    carried_forward: Mapped[float] = mapped_column(Float)      # goes to next month
+    net: Mapped[float] = mapped_column(Float)
+    previous_net: Mapped[float | None] = mapped_column(Float)
+    flags: Mapped[list] = mapped_column(JSON, default=list)    # ["unusual_change", "capped", ...]
+
+    driver: Mapped[Driver] = relationship()
+    station: Mapped[Station] = relationship()
+    lines: Mapped[list["SalaryLine"]] = relationship(
+        back_populates="salary", cascade="all, delete-orphan", order_by="SalaryLine.id"
+    )
+
+
+class SalaryLine(Base):
+    """A deduction or bonus line on the payslip, with its reason."""
+
+    __tablename__ = "salary_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    salary_id: Mapped[int] = mapped_column(ForeignKey("salaries.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))              # Deduction / Bonus
+    type: Mapped[str] = mapped_column(String(20))
+    amount_due: Mapped[float] = mapped_column(Float)
+    amount_applied: Mapped[float] = mapped_column(Float)       # what was actually taken this month
+    day: Mapped[date | None] = mapped_column(Date)
+    reference: Mapped[str | None] = mapped_column(String(50))
+    note: Mapped[str | None] = mapped_column(String(200))
+    plate_no: Mapped[str | None] = mapped_column(String(20))
+    carried_from: Mapped[str | None] = mapped_column(String(7))  # "2026-09" if carried from an earlier month
+
+    salary: Mapped[Salary] = relationship(back_populates="lines")

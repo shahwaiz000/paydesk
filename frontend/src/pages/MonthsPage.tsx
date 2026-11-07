@@ -7,6 +7,7 @@ import { monthLabel, type MonthSummary } from "../types";
 const STATUS_STYLE: Record<string, string> = {
   draft: "bg-amber-50 text-amber-700",
   ready: "bg-emerald-50 text-emerald-700",
+  calculated: "bg-indigo-50 text-indigo-700",
   locked: "bg-slate-100 text-slate-600",
 };
 
