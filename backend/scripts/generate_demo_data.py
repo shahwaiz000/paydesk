@@ -7,7 +7,8 @@ without touching any real company data.
 Run from the backend folder (with .venv active):
     python scripts/generate_demo_data.py
 
-Output folder: paydesk/samples/generated/
+Output folder: paydesk/samples/generated/  (current month)
+              paydesk/samples/generated/2026-09/  (previous month, for comparisons)
     drivers.xlsx               - File 1: driver list (750 drivers, 50 stations)
     deliveries.csv             - File 2: one row per delivered order
     adjustments.xlsx           - File 3: deductions + bonuses
@@ -152,123 +153,122 @@ for st in stations:
 drivers_df = pd.DataFrame(drivers)
 
 
-def active_range(d: dict) -> tuple[date, date]:
-    start = max(d["joining_date"], MONTH_START)
-    end = d["leaving_date"] or MONTH_END
-    return start, end
-
-
-# ---------------------------------------------------------------- File 4: vehicles
+# Things that stay the same for a driver every month
+driver_skill = {d["driver_id"]: random.uniform(10, 22) for d in drivers}       # deliveries per day
+driver_cod_share = {d["driver_id"]: random.uniform(0.3, 0.5) for d in drivers}
 used_plates: set = set()
-vehicles = []
-driver_plates: dict[str, list[tuple[str, date, date]]] = {}
-
-for d in drivers:
-    start, end = active_range(d)
-    plate = fake_plate(used_plates)
-    # ~3% of drivers switch vehicle mid-month (tests date matching for fines)
-    if random.random() < 0.03 and (end - start).days > 10:
-        switch = start + timedelta(days=random.randint(5, (end - start).days - 3))
-        plate2 = fake_plate(used_plates)
-        periods = [(plate, start, switch - timedelta(days=1)), (plate2, switch, end)]
-    else:
-        periods = [(plate, start, end)]
-    driver_plates[d["driver_id"]] = periods
-    for p, f, t in periods:
-        vehicles.append({"plate_no": p, "driver_id": d["driver_id"], "from_date": f, "to_date": t})
-
-vehicles_df = pd.DataFrame(vehicles)
-
-# ---------------------------------------------------------------- File 2: deliveries
+driver_main_plate = {d["driver_id"]: fake_plate(used_plates) for d in drivers}
 tracking_counter = 5_000_000_000
-delivery_rows = []
-driver_trackings: dict[str, list[str]] = {}
-
-for d in drivers:
-    start, end = active_range(d)
-    skill = random.uniform(10, 22)            # average deliveries per working day
-    cod_share = random.uniform(0.3, 0.5)
-    trackings = []
-    day = start
-    while day <= end:
-        if random.random() > 0.15:            # ~15% days off
-            for _ in range(max(0, int(random.gauss(skill, 4)))):
-                tracking_counter += 1
-                tn = f"SA{tracking_counter}"
-                trackings.append(tn)
-                delivery_rows.append((
-                    d["driver_id"], day.isoformat(), tn,
-                    "COD" if random.random() < cod_share else "Prepaid",
-                ))
-        day += timedelta(days=1)
-    driver_trackings[d["driver_id"]] = trackings
-
-deliveries_df = pd.DataFrame(delivery_rows, columns=["driver_id", "date", "tracking_no", "order_type"])
-
-# ---------------------------------------------------------------- File 3: adjustments
-adjustments = []
-active_ids = [d["driver_id"] for d in drivers]
-by_id = {d["driver_id"]: d for d in drivers}
-
-
-def add(driver_id, plate_no, kind, typ, amount, day, reference, note=""):
-    adjustments.append({
-        "driver_id": driver_id, "plate_no": plate_no, "kind": kind, "type": typ,
-        "amount": amount, "date": day, "reference": reference, "note": note,
-    })
-
-
-# Traffic fines: plate number only - PayDesk must find the driver (File 4)
-for i in range(120):
-    did = random.choice(active_ids)
-    plate, f, t = random.choice(driver_plates[did])
-    add(None, plate, "Deduction", "Traffic fine", random.choice([100, 150, 300, 500, 1000]),
-        random_day(f, t), f"TF-{8100000 + i}", "Speeding" if i % 3 else "Red light")
-
-# Lost parcels: tracking number from that driver's own deliveries
-for i in range(60):
-    did = random.choice(active_ids)
-    if not driver_trackings[did]:
-        continue
-    add(did, None, "Deduction", "Lost parcel", random.choice([50, 80, 120, 150, 250, 400]),
-        random_day(*active_range(by_id[did])), random.choice(driver_trackings[did]))
-
-# COD shortage
-for i in range(40):
-    did = random.choice(active_ids)
-    add(did, None, "Deduction", "Shortage", random.randint(2, 50) * 10,
-        random_day(*active_range(by_id[did])), f"SHT-{2000 + i}", "COD cash short at handover")
-
-# Advances
-for i in range(100):
-    did = random.choice(active_ids)
-    add(did, None, "Deduction", "Advance", random.choice([200, 300, 500]),
-        random_day(*active_range(by_id[did])), f"ADV-{3000 + i}")
-
-# Other (note is required)
 OTHER_NOTES = ["Uniform not returned", "Damaged phone holder", "Lost delivery bag",
                "Fuel card misuse", "Vehicle damage - minor"]
-for i in range(20):
-    did = random.choice(active_ids)
-    add(did, None, "Deduction", "Other", random.choice([50, 100, 150, 200]),
-        random_day(*active_range(by_id[did])), f"OTH-{4000 + i}", random.choice(OTHER_NOTES))
 
-# Bonuses
-for i in range(30):
-    did = random.choice(active_ids)
-    add(did, None, "Bonus", "Bonus", random.choice([100, 150, 200, 300]),
-        MONTH_END, f"BON-{5000 + i}", random.choice(["Top performer", "Perfect attendance"]))
 
-# Two big cases: deductions bigger than 50% of salary (tests the cap + carry-over)
-for did in random.sample(active_ids, 2):
-    add(did, None, "Deduction", "Lost parcel", 2500,
-        random_day(*active_range(by_id[did])),
-        random.choice(driver_trackings[did]) if driver_trackings[did] else "SA0000000000",
-        "High-value electronics parcel")
+def generate_month(year: int, month: int, big_cases: list[str]):
+    """Vehicles, deliveries and adjustments for one month."""
+    global tracking_counter
+    m_start = date(year, month, 1)
+    m_end = date(year, month, calendar.monthrange(year, month)[1])
 
-adjustments_df = pd.DataFrame(adjustments).sort_values(["date", "type"]).reset_index(drop=True)
+    def active_range(d: dict):
+        start = max(d["joining_date"], m_start)
+        end = min(d["leaving_date"] or m_end, m_end)
+        return (start, end) if start <= end else None
 
-# ---------------------------------------------------------------- errors version of File 1
+    active = [d for d in drivers if active_range(d)]
+    by_id = {d["driver_id"]: d for d in active}
+
+    # File 4: vehicles - ~3% switch vehicle mid-month (tests date matching for fines)
+    vehicles, driver_plates = [], {}
+    for d in active:
+        start, end = active_range(d)
+        plate = driver_main_plate[d["driver_id"]]
+        if random.random() < 0.03 and (end - start).days > 10:
+            switch = start + timedelta(days=random.randint(5, (end - start).days - 3))
+            periods = [(plate, start, switch - timedelta(days=1)), (fake_plate(used_plates), switch, end)]
+        else:
+            periods = [(plate, start, end)]
+        driver_plates[d["driver_id"]] = periods
+        for p, f, t in periods:
+            vehicles.append({"plate_no": p, "driver_id": d["driver_id"], "from_date": f, "to_date": t})
+
+    # File 2: deliveries - each month a driver is a bit better or worse,
+    # and ~6% are absent for a week (gives "unusual change" cases to review)
+    rows, trackings = [], {}
+    for d in active:
+        did = d["driver_id"]
+        start, end = active_range(d)
+        skill = driver_skill[did] * random.gauss(1, 0.12)
+        absent = set()
+        if random.random() < 0.06 and (end - start).days > 14:
+            a = start + timedelta(days=random.randint(0, (end - start).days - 10))
+            absent = {a + timedelta(days=i) for i in range(random.randint(7, 10))}
+        trackings[did] = []
+        day = start
+        while day <= end:
+            if day not in absent and random.random() > 0.15:      # ~15% days off
+                for _ in range(max(0, int(random.gauss(skill, 4)))):
+                    tracking_counter += 1
+                    tn = f"SA{tracking_counter}"
+                    trackings[did].append(tn)
+                    rows.append((did, day.isoformat(), tn,
+                                 "COD" if random.random() < driver_cod_share[did] else "Prepaid"))
+            day += timedelta(days=1)
+    deliveries = pd.DataFrame(rows, columns=["driver_id", "date", "tracking_no", "order_type"])
+
+    # File 3: adjustments
+    adj = []
+    ids = list(by_id)
+
+    def add(driver_id, plate_no, kind, typ, amount, day, reference, note=""):
+        adj.append({"driver_id": driver_id, "plate_no": plate_no, "kind": kind, "type": typ,
+                    "amount": amount, "date": day, "reference": reference, "note": note})
+
+    tag = f"{month:02d}"
+    for i in range(120):   # traffic fines: plate only - PayDesk finds the driver
+        did = random.choice(ids)
+        plate, f, t = random.choice(driver_plates[did])
+        add(None, plate, "Deduction", "Traffic fine", random.choice([100, 150, 300, 500, 1000]),
+            random_day(f, t), f"TF-{tag}{81000 + i}", "Speeding" if i % 3 else "Red light")
+    for i in range(60):    # lost parcels: tracking number from the driver's own deliveries
+        did = random.choice(ids)
+        if trackings[did]:
+            add(did, None, "Deduction", "Lost parcel", random.choice([50, 80, 120, 150, 250, 400]),
+                random_day(*active_range(by_id[did])), random.choice(trackings[did]))
+    for i in range(40):
+        did = random.choice(ids)
+        add(did, None, "Deduction", "Shortage", random.randint(2, 50) * 10,
+            random_day(*active_range(by_id[did])), f"SHT-{tag}{2000 + i}", "COD cash short at handover")
+    for i in range(100):
+        did = random.choice(ids)
+        add(did, None, "Deduction", "Advance", random.choice([200, 300, 500]),
+            random_day(*active_range(by_id[did])), f"ADV-{tag}{3000 + i}")
+    for i in range(20):
+        did = random.choice(ids)
+        add(did, None, "Deduction", "Other", random.choice([50, 100, 150, 200]),
+            random_day(*active_range(by_id[did])), f"OTH-{tag}{4000 + i}", random.choice(OTHER_NOTES))
+    for i in range(30):
+        did = random.choice(ids)
+        add(did, None, "Bonus", "Bonus", random.choice([100, 150, 200, 300]),
+            m_end, f"BON-{tag}{5000 + i}", random.choice(["Top performer", "Perfect attendance"]))
+    # Big cases: more than 50% of salary -> capped, the rest carried to next month
+    for did in big_cases:
+        if did in by_id and trackings[did]:
+            add(did, None, "Deduction", "Lost parcel", 2500, random_day(*active_range(by_id[did])),
+                random.choice(trackings[did]), "High-value electronics parcel")
+
+    adjustments = pd.DataFrame(adj).sort_values(["date", "type"]).reset_index(drop=True)
+    return pd.DataFrame(vehicles), deliveries, adjustments
+
+
+# Drivers who are active in both months (big cases carry over from Sep into Oct)
+full_both = [d["driver_id"] for d in drivers if d["joining_date"] < date(YEAR, MONTH - 1, 1) and not d["leaving_date"]]
+big_sep, big_oct = random.sample(full_both, 3), random.sample(full_both, 2)
+
+PREV_YEAR, PREV_MONTH = (YEAR, MONTH - 1) if MONTH > 1 else (YEAR - 1, 12)
+sep_vehicles, sep_deliveries, sep_adjustments = generate_month(PREV_YEAR, PREV_MONTH, big_sep)
+vehicles_df, deliveries_df, adjustments_df = generate_month(YEAR, MONTH, big_oct)
+
+# ---------------------------------------------------------------- errors versions (current month)
 errors_df = drivers_df.copy()
 errors_df = pd.concat([errors_df, errors_df.iloc[[5]]], ignore_index=True)   # duplicate driver ID
 bank_rows = errors_df.index[errors_df["payment_method"] == "Bank"]
@@ -279,7 +279,6 @@ errors_df.loc[30, "payment_method"] = "Cheque"                                # 
 errors_df.loc[40, "payment_method"] = "Csah"                                  # typo -> PayDesk suggests Cash
 errors_df.loc[50, "joining_date"] = "31/02/2026"                              # impossible date
 
-# Errors version of File 3 (adjustments)
 adj_err = adjustments_df.copy()
 first_driver_row = adj_err.index[adj_err["driver_id"].notna()][0]
 good_id = adj_err.loc[first_driver_row, "driver_id"]
@@ -289,6 +288,7 @@ adj_err.loc[adj_err.index[adj_err["type"] == "Other"][0], "note"] = None        
 adj_err.loc[adj_err.index[adj_err["type"] == "Advance"][0], "amount"] = -300               # negative amount
 
 # ---------------------------------------------------------------- save
+# Current month (October) in the main folder, previous month (September) in a sub-folder
 drivers_df.to_excel(OUT_DIR / "drivers.xlsx", index=False)
 deliveries_df.to_csv(OUT_DIR / "deliveries.csv", index=False)
 adjustments_df.to_excel(OUT_DIR / "adjustments.xlsx", index=False)
@@ -296,11 +296,18 @@ vehicles_df.to_excel(OUT_DIR / "vehicles.xlsx", index=False)
 errors_df.to_excel(OUT_DIR / "drivers_with_errors.xlsx", index=False)
 adj_err.to_excel(OUT_DIR / "adjustments_with_errors.xlsx", index=False)
 
-print(f"Month: {calendar.month_name[MONTH]} {YEAR}")
+PREV_DIR = OUT_DIR / f"{PREV_YEAR}-{PREV_MONTH:02d}"
+PREV_DIR.mkdir(exist_ok=True)
+drivers_df.to_excel(PREV_DIR / "drivers.xlsx", index=False)
+sep_deliveries.to_csv(PREV_DIR / "deliveries.csv", index=False)
+sep_adjustments.to_excel(PREV_DIR / "adjustments.xlsx", index=False)
+sep_vehicles.to_excel(PREV_DIR / "vehicles.xlsx", index=False)
+
+print(f"Months:       {calendar.month_name[PREV_MONTH]} {PREV_YEAR} (sub-folder) + "
+      f"{calendar.month_name[MONTH]} {YEAR} (main folder)")
 print(f"Stations:     {len(stations)}")
 print(f"Drivers:      {len(drivers_df)}  (cash {sum(drivers_df.payment_method == 'Cash')}, "
       f"bank {sum(drivers_df.payment_method == 'Bank')})")
-print(f"Deliveries:   {len(deliveries_df):,}")
-print(f"Adjustments:  {len(adjustments_df)}")
-print(f"Vehicles:     {len(vehicles_df)}")
+print(f"Deliveries:   {len(sep_deliveries):,} (prev) / {len(deliveries_df):,} (current)")
+print(f"Adjustments:  {len(sep_adjustments)} (prev) / {len(adjustments_df)} (current)")
 print(f"Saved to:     {OUT_DIR}")

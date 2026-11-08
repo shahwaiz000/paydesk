@@ -24,6 +24,7 @@ def salary_row(s: Salary) -> dict:
         "cod_count": s.cod_count, "cod_pay": s.cod_pay, "bonuses": s.bonuses, "gross": s.gross,
         "deductions_due": s.deductions_due, "deductions_applied": s.deductions_applied,
         "carried_forward": s.carried_forward, "net": s.net, "previous_net": s.previous_net, "flags": s.flags,
+        "change_reason": s.change_reason, "ai_reason": s.ai_reason,
     }
 
 
@@ -67,6 +68,8 @@ def summary(month_id: int, db: Session = Depends(get_db), _: User = Depends(can_
         "bonuses": money(total[8] or 0),
         "cash_net": money(by_method.get("Cash") or 0), "bank_net": money(by_method.get("Bank") or 0),
         "flags": flagged,
+        "ai_summary": month.ai_summary,
+        "ai_summary_at": month.ai_summary_at.isoformat() if month.ai_summary_at else None,
         "stations": [
             {"code": r[0], "name": r[1], "drivers": r[2], "net": money(r[3] or 0),
              "cash_needed": money(r[4] or 0), "cash_drivers": r[5]}

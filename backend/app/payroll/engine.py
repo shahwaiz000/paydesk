@@ -61,6 +61,45 @@ def fixed_pay(settings: PayrollSetting, days_worked: int, full_month: bool) -> f
     return money(min(settings.fixed_salary, settings.fixed_salary / settings.proration_days * days_worked))
 
 
+def _month_name(period: str) -> str:
+    y, m = map(int, period.split("-"))
+    return calendar.month_name[m]
+
+
+def _plural(n: int, word: str) -> str:
+    word = word.lower()
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def explain_change(prev: Salary, prev_period: str, net: float, days: int, fixed: float, prepaid: int,
+                   prepaid_pay: float, cod: int, cod_pay: float, bonuses: float, applied: float,
+                   lines: list[SalaryLine]) -> str:
+    """Plain-English reason why net pay moved a lot since last month (no AI needed)."""
+    diff = money(net - prev.net)
+    types: dict[str, int] = defaultdict(int)
+    for line in lines:
+        if line.kind == "Deduction" and line.amount_applied > 0:
+            types[line.type] += 1
+    deduction_detail = ", ".join(_plural(n, t) for t, n in types.items()) or "none"
+    parts = [
+        ("fixed pay", fixed - prev.fixed_pay, f"{days} vs {prev.days_worked} days"),
+        ("prepaid pay", prepaid_pay - prev.prepaid_pay, f"{prepaid} vs {prev.prepaid_count} deliveries"),
+        ("COD pay", cod_pay - prev.cod_pay, f"{cod} vs {prev.cod_count} deliveries"),
+        ("bonuses", bonuses - prev.bonuses, ""),
+        ("deductions", -(applied - prev.deductions_applied), f"this month: {deduction_detail}"),
+    ]
+    parts = sorted([p for p in parts if abs(p[1]) >= 1], key=lambda p: -abs(p[1]))[:3]
+    bits = []
+    for name, delta, why in parts:
+        if name == "deductions":   # deductions going UP means pay goes DOWN - say it in words
+            label = f"{abs(delta):,.0f} more deducted" if delta < 0 else f"{abs(delta):,.0f} less deducted"
+        else:
+            label = f"{name} {'+' if delta > 0 else '-'}{abs(delta):,.0f}"
+        bits.append(label + (f" ({why})" if why else ""))
+    direction = "Up" if diff > 0 else "Down"
+    return f"{direction} {abs(diff):,.0f} SAR vs {_month_name(prev_period)}: " + "; ".join(bits)
+
+
 def clear_salaries(db: Session, month_id: int) -> None:
     ids = select(Salary.id).where(Salary.month_id == month_id)
     db.execute(delete(SalaryLine).where(SalaryLine.salary_id.in_(ids)))
@@ -93,11 +132,11 @@ def calculate_month(db: Session, month: PayrollMonth) -> dict:
     # Last month: net (for the unusual-change check) and anything not yet deducted
     prev_period = previous_period(month.period)
     prev_month = db.scalar(select(PayrollMonth).where(PayrollMonth.period == prev_period))
-    prev_net: dict[str, float] = {}
+    prev_salary: dict[str, Salary] = {}
     carried_in: dict[str, list[SalaryLine]] = defaultdict(list)
     if prev_month:
         for s in db.scalars(select(Salary).where(Salary.month_id == prev_month.id)):
-            prev_net[s.driver_id] = s.net
+            prev_salary[s.driver_id] = s
             for line in s.lines:
                 left = money(line.amount_due - line.amount_applied)
                 if line.kind == "Deduction" and left > 0:
@@ -161,16 +200,20 @@ def calculate_month(db: Session, month: PayrollMonth) -> dict:
             flags.append("joiner" if d.joining_date >= start else "leaver")
         if prepaid + cod == 0:
             flags.append("no_deliveries")
-        previous = prev_net.get(d.id)
+        prev = prev_salary.get(d.id)
+        previous = prev.net if prev else None
+        reason = None
         if previous and abs(net - previous) / previous * 100 > settings.unusual_change_pct:
             flags.append("unusual_change")
+            reason = explain_change(prev, prev_period, net, days, fixed, prepaid, prepaid_pay, cod, cod_pay,
+                                    money(bonuses), applied, lines)
 
         db.add(Salary(
             month_id=month.id, driver_id=d.id, station_id=d.station_id, payment_method=d.payment_method,
             days_worked=days, full_month=full, fixed_pay=fixed, prepaid_count=prepaid, prepaid_pay=prepaid_pay,
             cod_count=cod, cod_pay=cod_pay, bonuses=money(bonuses), gross=gross, deductions_due=due,
             deductions_applied=applied, carried_forward=carried, net=net, previous_net=previous,
-            flags=flags, lines=lines,
+            flags=flags, lines=lines, change_reason=reason,
         ))
         totals["drivers"] += 1
         totals["gross"] += gross
@@ -180,5 +223,7 @@ def calculate_month(db: Session, month: PayrollMonth) -> dict:
         totals["cash_net" if d.payment_method == "Cash" else "bank_net"] += net
 
     month.status = "calculated"
+    month.ai_summary = None          # numbers changed -> old AI summary is out of date
+    month.ai_summary_at = None
     db.commit()
     return {k: (int(v) if k == "drivers" else money(v)) for k, v in totals.items()}

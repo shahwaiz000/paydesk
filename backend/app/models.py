@@ -7,7 +7,7 @@ Later stages add salaries, payments and disputes.
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -76,6 +76,8 @@ class PayrollMonth(Base):
     period: Mapped[str] = mapped_column(String(7), unique=True)        # "2026-10"
     status: Mapped[str] = mapped_column(String(20), default="draft")   # draft -> ready -> ...
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    ai_summary: Mapped[str | None] = mapped_column(Text)               # AI-written month summary
+    ai_summary_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     uploads: Mapped[list["FileUpload"]] = relationship(
         back_populates="month", cascade="all, delete-orphan", order_by="FileUpload.id"
@@ -187,6 +189,8 @@ class Salary(Base):
     net: Mapped[float] = mapped_column(Float)
     previous_net: Mapped[float | None] = mapped_column(Float)
     flags: Mapped[list] = mapped_column(JSON, default=list)    # ["unusual_change", "capped", ...]
+    change_reason: Mapped[str | None] = mapped_column(String(400))  # rule-based: why net changed vs last month
+    ai_reason: Mapped[str | None] = mapped_column(String(400))      # AI-written one-line reason
 
     driver: Mapped[Driver] = relationship()
     station: Mapped[Station] = relationship()

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     demo_data_dir: Path = PROJECT_DIR / "samples" / "generated"
     upload_dir: Path = BACKEND_DIR / "uploads"         # files waiting for fixes
     frontend_origin: str = "http://localhost:5174"
+    gemini_api_key: str = ""                           # put it in backend/.env - never in code
+    gemini_model: str = ""                              # empty = pick the newest flash model automatically
 
 
 settings = Settings()

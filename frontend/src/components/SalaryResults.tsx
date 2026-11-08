@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { FLAG_LABELS, FlagChip, sar } from "../format";
 import PayslipModal from "./PayslipModal";
+import ReviewPanel from "./ReviewPanel";
 
 interface StationTotal {
   code: string;
@@ -25,6 +26,8 @@ interface Summary {
   cash_net: number;
   bank_net: number;
   flags: Record<string, number>;
+  ai_summary: string | null;
+  ai_summary_at: string | null;
   stations: StationTotal[];
 }
 
@@ -68,11 +71,15 @@ export default function SalaryResults({ monthId, refreshKey }: { monthId: number
   const [flag, setFlag] = useState("");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
-  const [tab, setTab] = useState<"drivers" | "stations">("drivers");
+  const [tab, setTab] = useState<"review" | "drivers" | "stations">("review");
+
+  const loadSummary = useCallback(() => {
+    api<Summary>(`/api/months/${monthId}/summary`).then(setSummary).catch(() => setSummary(null));
+  }, [monthId]);
 
   useEffect(() => {
-    api<Summary>(`/api/months/${monthId}/summary`).then(setSummary).catch(() => setSummary(null));
-  }, [monthId, refreshKey]);
+    loadSummary();
+  }, [loadSummary, refreshKey]);
 
   const loadRows = useCallback(() => {
     const params = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE) });
@@ -124,16 +131,26 @@ export default function SalaryResults({ monthId, refreshKey }: { monthId: number
       )}
 
       <div className="mt-6 flex gap-2 border-b border-slate-200">
-        {(["drivers", "stations"] as const).map((t) => (
+        {(["review", "drivers", "stations"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}
           >
-            {t === "drivers" ? "By driver" : "Station cash plan"}
+            {t === "review" ? `Review${summary.flags.unusual_change ? ` (${summary.flags.unusual_change})` : ""}` : t === "drivers" ? "By driver" : "Station cash plan"}
           </button>
         ))}
       </div>
+
+      {tab === "review" && (
+        <ReviewPanel
+          monthId={monthId}
+          aiSummary={summary.ai_summary}
+          aiSummaryAt={summary.ai_summary_at}
+          onOpen={setOpen}
+          onSummaryChanged={loadSummary}
+        />
+      )}
 
       {tab === "stations" && (
         <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
