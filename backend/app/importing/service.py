@@ -255,11 +255,13 @@ def store_deliveries(db: Session, month: PayrollMonth, df: pd.DataFrame) -> None
 
 
 def store_adjustments(db: Session, month: PayrollMonth, df: pd.DataFrame) -> None:
-    db.execute(delete(Adjustment).where(Adjustment.month_id == month.id))
+    # Re-uploading the deductions file replaces file lines only - fines read from documents stay
+    db.execute(delete(Adjustment).where(Adjustment.month_id == month.id, Adjustment.source == "file"))
     rows = [{
         "month_id": month.id, "driver_id": r.driver_id, "plate_no": _s(r.plate_no),
         "matched_by_plate": bool(r.matched_by_plate), "kind": r.kind, "type": r.type,
         "amount": float(r.amount), "day": _d(r.date), "reference": _s(r.reference), "note": _s(r.note),
+        "source": "file",
     } for r in df.itertuples(index=False)]
     if rows:
         db.execute(Adjustment.__table__.insert(), rows)

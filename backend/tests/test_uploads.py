@@ -142,3 +142,54 @@ def test_driver_sees_only_own_payslip(client):
     h = login(client, "d2", "1234")
     assert client.get("/api/months/1/salaries/D2", headers=h).json()["net"] == 1000
     assert client.get("/api/months/1/salaries/D1", headers=h).status_code == 403
+
+
+def test_fines_from_documents(client, monkeypatch):
+    """AI reading is faked here (no internet in tests) - we test matching, duplicates and adding."""
+    import app.routers.fines as fines_router
+
+    answers = {
+        "a.pdf": {"fine_number": "TV-1", "plate_no": "ABC-1234", "date": "2026-10-20", "amount": "500",
+                  "violation": "Speeding", "confidence": "high"},
+        "b.png": {"fine_number": "TV-2", "plate_no": "9999 ZZZ", "date": "2026-10-20", "amount": 300},
+        "c.pdf": {"fine_number": "TF-1", "plate_no": "1234 ABC", "date": "2026-10-12", "amount": 300},
+    }
+    monkeypatch.setattr(fines_router, "read_document", lambda name, data: answers[name])
+
+    h = login(client, "accountant", "demo123")
+    res = client.post("/api/months/1/fines/read", headers=h,
+                      files=[("files", (n, b"x")) for n in answers])
+    assert res.status_code == 200, res.text
+    r = {x["filename"]: x for x in res.json()["results"]}
+    assert r["a.pdf"]["driver"]["id"] == "D1" and r["a.pdf"]["problem"] is None   # 'ABC-1234' == '1234 ABC'
+    assert "No driver had this plate" in r["b.png"]["problem"]
+    assert r["c.pdf"]["duplicate"] is True                                           # TF-1 already in File 3
+
+    res = client.post("/api/months/1/fines/add", headers=h, json={"fines": [
+        {"filename": "a.pdf", "fine_number": "TV-1", "plate_no": "ABC-1234", "date": "2026-10-20",
+         "amount": 500, "violation": "Speeding", "driver_id": "D1"},
+        {"filename": "b.png", "fine_number": "TV-2", "plate_no": "9999 ZZZ", "date": "2026-10-20",
+         "amount": 300, "driver_id": "D2"},          # wrong on purpose - server must refuse it
+    ]})
+    data = res.json()
+    assert data["added"] == 1 and len(data["skipped"]) == 1
+    assert data["month"]["status"] == "ready"        # needs recalculation now
+
+    client.post("/api/months/1/calculate", headers=h)
+    d1 = client.get("/api/months/1/salaries/D1", headers=h).json()
+    assert d1["deductions_applied"] == 800           # 300 (file) + 500 (from document)
+    assert any("read by AI" in (l["note"] or "") for l in d1["lines"])
+
+
+def test_driver_search(client):
+    h = login(client, "accountant", "demo123")
+    res = client.get("/api/drivers?q=two", headers=h).json()
+    assert [d["id"] for d in res["items"]] == ["D2"]
+    assert client.get("/api/drivers?q=d3", headers=h).json()["items"][0]["name"] == "Test Driver Three"
+    profile = client.get("/api/drivers/d1", headers=h).json()
+    assert profile["months"][0]["period"] == "2026-10"
+
+    cashier = login(client, "ruh-01", "demo123")       # Riyadh cashier
+    ids = [d["id"] for d in client.get("/api/drivers", headers=cashier).json()["items"]]
+    assert sorted(ids) == ["D1", "D2"]                 # D3 is in Jeddah - not visible
+    assert client.get("/api/drivers/D3", headers=cashier).status_code == 403

@@ -303,6 +303,71 @@ sep_deliveries.to_csv(PREV_DIR / "deliveries.csv", index=False)
 sep_adjustments.to_excel(PREV_DIR / "adjustments.xlsx", index=False)
 sep_vehicles.to_excel(PREV_DIR / "vehicles.xlsx", index=False)
 
+# ---------------------------------------------------------------- fake fine documents (for AI reading)
+def make_fine_documents():
+    """6 DEMO traffic fine notices: 4 match a driver, 1 unknown plate, 1 already in the deductions file."""
+    from reportlab.lib.pagesizes import A5
+    from reportlab.pdfgen import canvas
+
+    fines_dir = OUT_DIR / "fines"
+    fines_dir.mkdir(exist_ok=True)
+    for old in fines_dir.glob("*"):
+        old.unlink()
+
+    picks = vehicles_df.sample(4, random_state=SEED)
+    docs = []
+    for i, v in enumerate(picks.itertuples(index=False)):
+        day = random_day(v.from_date, v.to_date)
+        plate = v.plate_no
+        if i == 1:   # written differently on the notice: letters first, with a dash
+            digits, letters = plate.split(" ")
+            plate = f"{letters}-{digits}"
+        docs.append((f"TV-{random.randint(40000000, 49999999)}", plate, day,
+                     random.choice([150, 300, 500, 900]), random.choice(
+                         ["Exceeding speed limit", "Running a red light", "Wrong parking", "Using mobile while driving"])))
+    docs.append(("TV-40000001", "9999 ZZZ", date(YEAR, MONTH, 14), 300, "Wrong parking"))   # nobody has this plate
+    first_fine = adjustments_df[adjustments_df["type"] == "Traffic fine"].iloc[0]           # already in File 3
+    docs.append((first_fine["reference"], first_fine["plate_no"], first_fine["date"],
+                 int(first_fine["amount"]), "Exceeding speed limit"))
+
+    for n, (number, plate, day, amount, violation) in enumerate(docs, start=1):
+        path = fines_dir / f"fine_{n}.pdf"
+        c = canvas.Canvas(str(path), pagesize=A5)
+        w, h = A5
+        c.setFillColorRGB(0.85, 0.1, 0.1)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(w / 2, h - 30, "DEMO DOCUMENT - NOT A REAL FINE")
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Helvetica-Bold", 16)
+        c.drawCentredString(w / 2, h - 60, "Traffic Violation Notice")
+        c.setFont("Helvetica", 9)
+        c.drawCentredString(w / 2, h - 75, "PayDesk demo data - fictional traffic authority")
+        rows = [("Violation No.", number), ("Vehicle plate", plate),
+                ("Date of violation", day.strftime("%d/%m/%Y")), ("Time", f"{random.randint(7, 22):02d}:{random.randint(0, 59):02d}"),
+                ("Location", random.choice(["King Fahd Rd", "Olaya St", "Prince Sultan St", "Ring Rd Exit 9"])),
+                ("Violation", violation), ("Fine amount", f"SAR {amount:,.2f}")]
+        y = h - 120
+        for label, value in rows:
+            c.setFont("Helvetica", 10)
+            c.drawString(40, y, label)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(160, y, str(value))
+            y -= 26
+        c.setFont("Helvetica", 8)
+        c.drawString(40, 40, "Payment due within 30 days. This is sample data for testing only.")
+        c.save()
+
+    # Turn the last-but-one notice into a phone-photo style PNG (AI reads images too)
+    import pymupdf
+    png_source = fines_dir / f"fine_{len(docs) - 2}.pdf"
+    with pymupdf.open(png_source) as doc:
+        doc[0].get_pixmap(dpi=110).save(str(fines_dir / f"fine_{len(docs) - 2}.png"))
+    png_source.unlink()
+    return len(docs)
+
+
+fine_count = make_fine_documents()
+
 print(f"Months:       {calendar.month_name[PREV_MONTH]} {PREV_YEAR} (sub-folder) + "
       f"{calendar.month_name[MONTH]} {YEAR} (main folder)")
 print(f"Stations:     {len(stations)}")
@@ -310,4 +375,5 @@ print(f"Drivers:      {len(drivers_df)}  (cash {sum(drivers_df.payment_method ==
       f"bank {sum(drivers_df.payment_method == 'Bank')})")
 print(f"Deliveries:   {len(sep_deliveries):,} (prev) / {len(deliveries_df):,} (current)")
 print(f"Adjustments:  {len(sep_adjustments)} (prev) / {len(adjustments_df)} (current)")
+print(f"Fine documents: {fine_count} (in the 'fines' folder)")
 print(f"Saved to:     {OUT_DIR}")

@@ -146,6 +146,7 @@ class Adjustment(Base):
     day: Mapped[date | None] = mapped_column(Date)
     reference: Mapped[str | None] = mapped_column(String(50))
     note: Mapped[str | None] = mapped_column(String(200))
+    source: Mapped[str] = mapped_column(String(20), default="file")   # file / ai_document
 
 
 # ------------------------------------------------------------------ Stage 4

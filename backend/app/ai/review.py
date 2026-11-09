@@ -94,7 +94,9 @@ def month_summary(db: Session, month: PayrollMonth) -> str:
         .where(S.month_id == month.id, SalaryLine.kind == "Deduction")
         .group_by(SalaryLine.type)
     ).all())
-    flags = Counter(f for fl in db.scalars(select(S.flags).where(S.month_id == month.id)) for f in fl)
+    all_flags = list(db.scalars(select(S.flags).where(S.month_id == month.id)))
+    flags = Counter(f for fl in all_flags for f in fl)
+    needs_review = sum(1 for fl in all_flags if "unusual_change" in fl or "capped" in fl)
     stations = db.execute(
         select(Station.name, func.sum(S.deductions_applied).label("ded"), func.sum(S.net))
         .join(S, S.station_id == Station.id).where(S.month_id == month.id)
@@ -109,6 +111,7 @@ def month_summary(db: Session, month: PayrollMonth) -> str:
         "cash_at_stations_sar": money(cash), "bank_transfer_sar": money((rows[3] or 0) - cash),
         "deductions_by_type_sar": {k: money(v or 0) for k, v in by_type.items()},
         "flag_counts": dict(flags),
+        "salaries_needing_review": needs_review,   # one driver can have several flags - this is the real count
         "stations_with_most_deductions": [
             {"station": r[0], "deducted_sar": money(r[1] or 0)} for r in stations
         ],
@@ -121,7 +124,8 @@ def month_summary(db: Session, month: PayrollMonth) -> str:
     prompt = f"""You write a short payroll summary for the finance manager of a delivery company in Saudi Arabia.
 Use ONLY these numbers. Write 4 to 6 short bullet points in plain English, each starting with "- ".
 Cover: total to pay (cash vs bank), change vs last month if given, the biggest deduction types,
-how many salaries need review (unusual_change, capped), and stations with most deductions.
+how many salaries need review (use salaries_needing_review - do NOT add flag counts together),
+and stations with most deductions.
 No greeting, no advice, no invented numbers. Format SAR amounts like 1,234,567 SAR.
 
 Data:

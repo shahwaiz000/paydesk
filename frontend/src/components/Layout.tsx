@@ -1,9 +1,13 @@
-import { NavLink, Navigate, Outlet } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE_LABELS } from "../api";
 import { useAuth } from "../auth";
 
 export default function Layout() {
   const { user, loading, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [search, setSearch] = useState("");
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-slate-500">Loading…</div>;
@@ -19,11 +23,12 @@ export default function Layout() {
             <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
               {ROLE_LABELS[user.role]}
             </span>
-            {(user.role === "accountant" || user.role === "finance_manager") && (
+            {user.role !== "driver" && (
               <nav className="ml-6 flex gap-1 text-sm">
                 {[
                   { to: "/", label: "Home" },
-                  { to: "/months", label: "Payroll months" },
+                  ...(user.role === "cashier" ? [] : [{ to: "/months", label: "Payroll months" }]),
+                  { to: "/drivers", label: "Drivers" },
                 ].map((l) => (
                   <NavLink
                     key={l.to}
@@ -40,6 +45,22 @@ export default function Layout() {
             )}
           </div>
           <div className="flex items-center gap-4 text-sm">
+            {user.role !== "driver" && location.pathname !== "/drivers" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  navigate(`/drivers?q=${encodeURIComponent(search.trim())}`);
+                  setSearch("");
+                }}
+              >
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="🔍 Search driver…"
+                  className="w-56 rounded-lg border border-slate-300 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </form>
+            )}
             <span className="text-slate-600">{user.full_name}</span>
             <button onClick={logout} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
               Log out

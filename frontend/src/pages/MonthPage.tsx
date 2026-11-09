@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import FinesCard from "../components/FinesCard";
 import SalaryResults from "../components/SalaryResults";
 import UploadCard from "../components/UploadCard";
 import { monthLabel, type FileKind, type MonthDetail } from "../types";
@@ -94,6 +95,10 @@ export default function MonthPage() {
       {calcError && <p className="mt-3 text-red-600">{calcError}</p>}
 
       {month.status === "calculated" && <SalaryResults monthId={month.id} refreshKey={refreshKey} />}
+
+      {user?.role === "accountant" && (month.status === "ready" || month.status === "calculated") && (
+        <FinesCard monthId={month.id} onAdded={load} />
+      )}
 
       <h2 className="mt-10 text-xl font-bold text-slate-800">Month files</h2>
       <div className="mt-4 grid gap-4">
