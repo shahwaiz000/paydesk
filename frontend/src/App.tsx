@@ -6,6 +6,7 @@ import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import MonthPage from "./pages/MonthPage";
 import MonthsPage from "./pages/MonthsPage";
+import MyPayslipPage from "./pages/MyPayslipPage";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/months/:id" element={<MonthPage />} />
         <Route path="/drivers" element={<DriversPage />} />
         <Route path="/drivers/:id" element={<DriverPage />} />
+        <Route path="/payslips/:monthId" element={<MyPayslipPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

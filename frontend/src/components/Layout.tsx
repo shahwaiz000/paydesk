@@ -17,12 +17,17 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200">
-        <div className="mx-auto max-w-6xl flex items-center justify-between px-6 py-3">
+        <div className="mx-auto max-w-6xl flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <span className="text-xl font-bold text-indigo-700">PayDesk</span>
             <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
               {ROLE_LABELS[user.role]}
             </span>
+            {user.role === "driver" && (
+              <NavLink to="/" className="ml-2 hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:inline">
+                My payslips
+              </NavLink>
+            )}
             {user.role !== "driver" && (
               <nav className="ml-6 flex gap-1 text-sm">
                 {[
@@ -61,14 +66,14 @@ export default function Layout() {
                 />
               </form>
             )}
-            <span className="text-slate-600">{user.full_name}</span>
+            <span className="hidden text-slate-600 sm:inline">{user.full_name}</span>
             <button onClick={logout} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
               Log out
             </button>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <Outlet />
       </main>
     </div>

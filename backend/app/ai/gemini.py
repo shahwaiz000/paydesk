@@ -18,6 +18,10 @@ RETRY_WAITS = [2, 5]             # seconds to wait when Google says "high demand
 REQUEST_TIMEOUT_MS = 45_000      # one request may take at most 45 seconds
 TOTAL_DEADLINE_S = 90            # all retries and model switches together: at most 90 seconds
 _discovered: str | None = None   # newest working "flash" model, found automatically
+_discovered_fast: str | None = None   # newest working "flash-lite" model (quick answers, e.g. driver chat)
+_model_list: list[str] | None = None  # models this key can use - asked from Google once, then remembered
+_client = None                        # one connection to Google, reused (faster than a new one each time)
+_client_key = ""
 
 
 class AIError(Exception):
@@ -41,8 +45,12 @@ def is_enabled() -> bool:
     return bool(api_key())
 
 
-def _models() -> list[str]:
+def _models(fast: bool = False) -> list[str]:
     models = [_discovered, settings.gemini_model] + FALLBACK_MODELS
+    if fast:
+        # quick answers: the light models first (they don't "think" first), then the normal ones
+        lite = [m for m in (_model_list or []) if "lite" in m]
+        models = [_discovered_fast] + lite + models
     seen: list[str] = []
     for m in models:
         if m and m not in seen:
@@ -75,8 +83,21 @@ def _discover_flash_models(client) -> list[str]:
         return []
 
 
-def generate(prompt: str, want_json: bool = False, files: list[tuple[bytes, str]] | None = None) -> str:
-    """files: optional [(bytes, mime_type)] - images or PDFs for Gemini to read."""
+def _get_client(key: str):
+    global _client, _client_key
+    if _client is None or _client_key != key:
+        from google import genai
+        from google.genai import types
+        # Never wait forever: each Gemini request gives up after 45 seconds
+        _client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS))
+        _client_key = key
+    return _client
+
+
+def generate(prompt: str, want_json: bool = False, files: list[tuple[bytes, str]] | None = None,
+             fast: bool = False) -> str:
+    """files: optional [(bytes, mime_type)] - images or PDFs for Gemini to read.
+    fast=True: for short answers (driver chat) - tries the quicker flash-lite models first."""
     key = api_key()
     if not key:
         raise AIError("No Gemini key. Add GEMINI_API_KEY to backend/.env and restart the backend.")
@@ -86,9 +107,12 @@ def generate(prompt: str, want_json: bool = False, files: list[tuple[bytes, str]
         raise AIError("google-genai is not installed (pip install google-genai)") from e
 
     from google.genai import types
-    # Never wait forever: each Gemini request gives up after 45 seconds
-    client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS))
-    deadline = time.monotonic() + TOTAL_DEADLINE_S
+    client = _get_client(key)
+    global _model_list
+    if fast and _model_list is None:
+        _model_list = _discover_flash_models(client)   # once per backend start
+    started = time.monotonic()
+    deadline = started + TOTAL_DEADLINE_S
     contents: list = [prompt]
     if files:
         contents = [types.Part.from_bytes(data=data, mime_type=mime) for data, mime in files] + [prompt]
@@ -96,10 +120,10 @@ def generate(prompt: str, want_json: bool = False, files: list[tuple[bytes, str]
     if want_json:
         config["response_mime_type"] = "application/json"
 
-    global _discovered
+    global _discovered, _discovered_fast
     errors: list[str] = []
     tried: set[str] = set()
-    candidates = _models()
+    candidates = _models(fast)
     discovered_once = False
     while candidates:
         if time.monotonic() > deadline:
@@ -114,7 +138,11 @@ def generate(prompt: str, want_json: bool = False, files: list[tuple[bytes, str]
                 response = client.models.generate_content(model=model, contents=contents, config=config)
                 text = (response.text or "").strip()
                 if text:
-                    _discovered = model          # remember the one that works
+                    if fast:
+                        _discovered_fast = model  # remember the one that works
+                    else:
+                        _discovered = model
+                    print(f"[ai] {model} answered in {time.monotonic() - started:.1f} s")
                     return text
                 errors.append(f"{model}: empty answer")
                 break
@@ -133,7 +161,9 @@ def generate(prompt: str, want_json: bool = False, files: list[tuple[bytes, str]
                 break
         if not candidates and not discovered_once:
             discovered_once = True
-            candidates.extend(m for m in _discover_flash_models(client) if m not in tried)
+            if _model_list is None:
+                _model_list = _discover_flash_models(client)
+            candidates.extend(m for m in _model_list if m not in tried)
     raise AIError("Gemini couldn't answer right now - please try again in a minute. (" +
                   " | ".join(errors)[:300] + ")")
 

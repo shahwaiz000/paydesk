@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import MyPayslipsPage from "./MyPayslipsPage";
 
 type Overview = Record<string, string | number | null>;
 
@@ -14,26 +15,20 @@ function Stat({ label, value }: { label: string; value: string | number | null }
   );
 }
 
-function Row({ label, value }: { label: string; value: string | number | null }) {
-  return (
-    <div className="flex justify-between py-2 border-b border-slate-100 last:border-0">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-medium text-slate-800">{value ?? "—"}</span>
-    </div>
-  );
-}
-
 export default function HomePage() {
   const { user } = useAuth();
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
 
+  const isDriver = user?.role === "driver";
   useEffect(() => {
+    if (isDriver) return; // drivers get their payslips page instead
     api<Overview>("/api/overview")
       .then(setData)
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [isDriver]);
 
+  if (isDriver) return <MyPayslipsPage />;
   if (error) return <p className="text-red-600">{error}</p>;
   if (!data || !user) return <p className="text-slate-500">Loading…</p>;
 
@@ -72,20 +67,5 @@ export default function HomePage() {
     );
   }
 
-  // Driver
-  return (
-    <div className="max-w-md">
-      <h1 className="text-2xl font-bold text-slate-800">Hello, {data.name}</h1>
-      <p className="text-slate-500 mt-1">Your payslips will appear here.</p>
-      <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm border border-slate-200">
-        <Row label="Driver ID" value={data.driver_id} />
-        <Row label="Station" value={data.station} />
-        <Row label="Joining date" value={data.joining_date} />
-        <Row
-          label="Salary paid by"
-          value={data.payment_method === "Bank" ? `Bank ···· ${data.iban_last4}` : "Cash at station"}
-        />
-      </div>
-    </div>
-  );
+  return null;
 }

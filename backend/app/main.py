@@ -7,7 +7,7 @@ from . import models  # noqa: F401  (registers the tables)
 from .config import settings
 from .database import Base, SessionLocal, add_missing_columns, engine
 from .payroll.engine import get_settings
-from .routers import ai, auth, drivers, fines, months, overview, salaries
+from .routers import ai, auth, drivers, fines, me, months, overview, salaries
 from .seed import seed_demo
 
 
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="PayDesk API", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="PayDesk API", version="0.8.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +42,7 @@ app.include_router(salaries.router)
 app.include_router(ai.router)
 app.include_router(fines.router)
 app.include_router(drivers.router)
+app.include_router(me.router)
 
 
 @app.get("/api/health")

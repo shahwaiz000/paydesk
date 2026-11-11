@@ -1,47 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { FlagChip, sar } from "../format";
-import { monthLabel } from "../types";
-
-interface Line {
-  kind: "Deduction" | "Bonus";
-  type: string;
-  amount_due: number;
-  amount_applied: number;
-  carried: number;
-  day: string | null;
-  reference: string | null;
-  note: string | null;
-  plate_no: string | null;
-  carried_from: string | null;
-}
-
-interface Payslip {
-  period: string;
-  driver_id: string;
-  name: string;
-  station: string;
-  payment_method: string;
-  days_worked: number;
-  full_month: boolean;
-  fixed_pay: number;
-  prepaid_count: number;
-  prepaid_pay: number;
-  cod_count: number;
-  cod_pay: number;
-  bonuses: number;
-  gross: number;
-  deductions_due: number;
-  deductions_applied: number;
-  carried_forward: number;
-  net: number;
-  flags: string[];
-  joining_date: string;
-  leaving_date: string | null;
-  rates: { fixed_salary: number; prepaid_rate: number; cod_rate: number; proration_days: number; deduction_cap_pct: number };
-  lines: Line[];
-  daily: { day: string | null; prepaid: number; cod: number }[];
-}
+import { lineReason, monthLabel, type Payslip } from "../types";
 
 function Row({ label, detail, amount, bold, minus }: { label: string; detail?: string; amount: number; bold?: boolean; minus?: boolean }) {
   return (
@@ -56,12 +16,6 @@ function Row({ label, detail, amount, bold, minus }: { label: string; detail?: s
       </span>
     </div>
   );
-}
-
-function lineReason(l: Line): string {
-  const bits = [l.reference, l.plate_no ? `plate ${l.plate_no}` : null, l.day, l.note].filter(Boolean);
-  if (l.carried_from) bits.unshift(`carried from ${monthLabel(l.carried_from)}`);
-  return bits.join(" · ");
 }
 
 export default function PayslipModal({ monthId, driverId, onClose }: { monthId: number; driverId: string; onClose: () => void }) {

@@ -193,3 +193,83 @@ def test_driver_search(client):
     ids = [d["id"] for d in client.get("/api/drivers", headers=cashier).json()["items"]]
     assert sorted(ids) == ["D1", "D2"]                 # D3 is in Jeddah - not visible
     assert client.get("/api/drivers/D3", headers=cashier).status_code == 403
+
+
+# ------------------------------------------------------------------ Stage 8: driver payslip page
+
+def test_driver_sees_own_payslips(client):
+    h = login(client, "d1", "1234")
+    data = client.get("/api/me/payslips", headers=h).json()
+    assert data["driver"]["id"] == "D1"
+    assert [m["period"] for m in data["months"]] == ["2026-10"]
+    m = data["months"][0]
+    assert m["final"] is False                      # calculated but not approved yet
+    assert m["net"] == 1900 and m["deliveries"] == 500
+
+    slip = client.get(f"/api/me/payslips/{m['month_id']}", headers=h).json()
+    assert slip["driver_id"] == "D1" and slip["net"] == 1900
+    words = " ".join(slip["in_words"])
+    assert "SAR 1,900" in words and "not final yet" in words
+    assert "Traffic fine SAR 300" in words and "Traffic fine SAR 500" in words
+
+
+def test_driver_page_is_private(client):
+    staff = login(client, "accountant", "demo123")
+    assert client.get("/api/me/payslips", headers=staff).status_code == 403
+
+    h = login(client, "d3", "1234")
+    slip = client.get("/api/me/payslips/1", headers=h).json()
+    assert slip["driver_id"] == "D3"                # never another driver's payslip
+    assert "moves to next month" in " ".join(slip["in_words"])   # capped at 50%
+    assert client.get("/api/me/payslips/999", headers=h).status_code == 404
+
+
+def test_driver_cannot_see_month_before_calculation(client):
+    from app.database import SessionLocal
+    from app.models import PayrollMonth
+
+    with SessionLocal() as db:
+        db.get(PayrollMonth, 1).status = "ready"      # accountant is still working on it
+        db.commit()
+    h = login(client, "d1", "1234")
+    try:
+        assert client.get("/api/me/payslips", headers=h).json()["months"] == []
+        assert client.get("/api/me/payslips/1", headers=h).status_code == 404
+    finally:
+        with SessionLocal() as db:
+            db.get(PayrollMonth, 1).status = "calculated"
+            db.commit()
+
+
+def test_payslip_chat(client, monkeypatch):
+    """AI is faked (no internet in tests). We check what is sent to it - and what is NOT."""
+    import app.routers.me as me_router
+    from app.ai import payslip_chat
+
+    sent = {}
+
+    def fake_generate(prompt, fast=False):
+        assert fast is True                         # driver chat uses the quick models
+        sent["prompt"] = prompt
+        return "Your fixed salary is 1,500 for the full month."
+
+    monkeypatch.setattr(payslip_chat, "generate", fake_generate)
+    me_router._asked.clear()
+    h = login(client, "d1", "1234")
+    res = client.post("/api/me/payslips/1/ask", headers=h, json={
+        "question": "Why is my salary 1900?",
+        "history": [{"role": "driver", "text": "hi"}, {"role": "assistant", "text": "Hello!"}],
+    })
+    assert res.status_code == 200, res.text
+    assert "1,500" in res.json()["answer"]
+    prompt = sent["prompt"]
+    assert "Why is my salary 1900?" in prompt and '"net_salary": 1900' in prompt
+    assert "Test Driver One" not in prompt          # no name
+    assert "SA03" not in prompt                     # no IBAN
+    assert '"D2"' not in prompt and '"D3"' not in prompt   # no other drivers
+
+    too_long = client.post("/api/me/payslips/1/ask", headers=h, json={"question": "x" * 301})
+    assert too_long.status_code == 422
+
+    monkeypatch.setattr(me_router, "QUESTIONS_PER_HOUR", 1)
+    assert client.post("/api/me/payslips/1/ask", headers=h, json={"question": "again?"}).status_code == 429

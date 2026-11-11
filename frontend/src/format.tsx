@@ -16,3 +16,19 @@ export function FlagChip({ flag }: { flag: string }) {
   const f = FLAG_LABELS[flag] ?? { label: flag, style: "bg-slate-100 text-slate-600" };
   return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${f.style}`}>{f.label}</span>;
 }
+
+// Is this payslip final (approved) or can it still change?
+export function StatusBadge({ final, light }: { final: boolean; light?: boolean }) {
+  if (final) {
+    return (
+      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${light ? "bg-white/20 text-white" : "bg-emerald-50 text-emerald-700"}`}>
+        ✓ Final
+      </span>
+    );
+  }
+  return (
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${light ? "bg-amber-300/30 text-amber-100" : "bg-amber-50 text-amber-700"}`}>
+      Not final yet
+    </span>
+  );
+}

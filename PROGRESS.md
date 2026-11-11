@@ -37,20 +37,24 @@
   - search box in the header and a Drivers page
   - driver profile with salary history
   - cashiers see only their own station
+- **Stage 8 – Driver payslip page:**
+  - driver home: latest salary card + past months
+  - full payslip: earnings, deductions with reasons, 50% rule, day-by-day deliveries
+  - "Your salary in simple words" (no AI, always works)
+  - "Why is my salary this?" AI chat: sees only that driver's payslip, no name/Iqama/IBAN sent, 20 questions an hour
+  - drivers see a month once it is calculated, marked "Not final yet" until approved (Stage 10)
+  - works on a phone screen
 - **Fixes:**
   - new columns are added to the database automatically on startup
   - the demo database (`paydesk-demo.db`) is now the default
-- **Tests:** 14 passing (`pytest`)
+- **Tests:** 18 passing (`pytest`)
 
 ## Where we stopped
-- Driver search is built and tested.
-- The login problem is fixed: default database is now `paydesk-demo.db`.
-- Latest work is pushed to Git.
+- Stage 8 is built and tested (18 tests).
 - Decided (11 Nov 2026): **no CODesk link**. PayDesk stays separate. Shortages and advances keep coming from the adjustments file.
-- **Next action:** start **Stage 8 – Driver payslip page**.
+- **Next action:** push Stage 8 to Git, then start **Stage 9 – Disputes**.
 
 ## Next (in order)
-8. **Driver payslip page:** driver login view, daily breakdown, past months, "Why is my salary this?" AI chat (driver's own data only)
 9. **Disputes:** driver taps "I don't agree" on a deduction line; accountant inbox; AI-drafted replies
 10. **Approve & lock:** accountant prepares → finance manager approves → month locked
 11. **Distribution:** one click sends 50 station emails (Outbox page in demo); SAB-style bank Excel file with column mapping; station cash plan

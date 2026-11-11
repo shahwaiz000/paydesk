@@ -13,6 +13,7 @@ from ..payroll.engine import calculate_month, get_settings, money
 from .months import get_month
 
 router = APIRouter(prefix="/api/months/{month_id}", tags=["salaries"])
+FINAL_STATUSES = ("approved", "locked")   # Stage 10 adds approve & lock
 can_view_all = require_roles(ACCOUNTANT, FINANCE_MANAGER)
 
 
@@ -117,6 +118,11 @@ def payslip(month_id: int, driver_id: str, db: Session = Depends(get_db), user: 
     if not allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You can't see this payslip")
 
+    return build_payslip(db, month, s)
+
+
+def build_payslip(db: Session, month: PayrollMonth, s: Salary) -> dict:
+    """Everything on one payslip: totals, rates, every deduction/bonus line and the daily deliveries."""
     days = db.execute(
         select(DeliveryDay.day, DeliveryDay.prepaid, DeliveryDay.cod)
         .where(DeliveryDay.month_id == month.id, DeliveryDay.driver_id == s.driver_id)
@@ -125,7 +131,10 @@ def payslip(month_id: int, driver_id: str, db: Session = Depends(get_db), user: 
     settings = get_settings(db)
     data = salary_row(s)
     data.update({
+        "month_id": month.id,
         "period": month.period,
+        "month_status": month.status,
+        "final": month.status in FINAL_STATUSES,
         "rates": {"fixed_salary": settings.fixed_salary, "prepaid_rate": settings.prepaid_rate,
                   "cod_rate": settings.cod_rate, "proration_days": settings.proration_days,
                   "deduction_cap_pct": settings.deduction_cap_pct},
@@ -137,7 +146,10 @@ def payslip(month_id: int, driver_id: str, db: Session = Depends(get_db), user: 
             "day": l.day.isoformat() if l.day else None, "reference": l.reference, "note": l.note,
             "plate_no": l.plate_no, "carried_from": l.carried_from,
         } for l in s.lines],
-        "daily": [{"day": d.day.isoformat() if d.day else None, "prepaid": d.prepaid, "cod": d.cod} for d in days],
+        "daily": [{
+            "day": d.day.isoformat() if d.day else None, "prepaid": d.prepaid, "cod": d.cod,
+            "earned": money(d.prepaid * settings.prepaid_rate + d.cod * settings.cod_rate),
+        } for d in days],
     })
     return data
 
