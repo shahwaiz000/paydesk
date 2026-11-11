@@ -13,7 +13,7 @@ from ..payroll.engine import calculate_month, get_settings, money
 from .months import get_month
 
 router = APIRouter(prefix="/api/months/{month_id}", tags=["salaries"])
-FINAL_STATUSES = ("approved", "locked")   # Stage 10 adds approve & lock
+FINAL_STATUSES = ("approved",)            # approved by the finance manager = final and locked
 can_view_all = require_roles(ACCOUNTANT, FINANCE_MANAGER)
 
 

@@ -84,11 +84,11 @@ export default function Layout() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="🔍 Search driver…"
-                  className="w-56 rounded-lg border border-slate-300 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-44 rounded-lg border border-slate-300 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </form>
             )}
-            <span className="hidden text-slate-600 sm:inline">{user.full_name}</span>
+            <span className="hidden text-slate-600 xl:inline">{user.full_name}</span>
             <button onClick={logout} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
               Log out
             </button>

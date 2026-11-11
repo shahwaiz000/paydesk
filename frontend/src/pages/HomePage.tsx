@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import MyPayslipsPage from "./MyPayslipsPage";
+import { monthLabel, type MonthSummary } from "../types";
 
 type Overview = Record<string, string | number | null>;
 
@@ -44,6 +45,7 @@ export default function HomePage() {
           <Stat label="Paid in cash" value={data.cash_drivers} />
           <Stat label="Paid by bank" value={data.bank_drivers} />
         </div>
+        <WaitingForYou role={user.role} />
         <Link
           to="/months"
           className="mt-8 block rounded-2xl border border-dashed border-indigo-300 bg-indigo-50 p-6 text-indigo-800 hover:bg-indigo-100"
@@ -68,4 +70,33 @@ export default function HomePage() {
   }
 
   return null;
+}
+
+// Months that need this person: approval for the finance manager, sent-back months for the accountant.
+function WaitingForYou({ role }: { role: string }) {
+  const [months, setMonths] = useState<MonthSummary[]>([]);
+  useEffect(() => {
+    api<MonthSummary[]>("/api/months").then(setMonths).catch(() => {});
+  }, []);
+  const waiting =
+    role === "finance_manager"
+      ? months.filter((m) => m.status === "submitted")
+      : months.filter((m) => m.status === "calculated" && m.returned_note);
+  if (waiting.length === 0) return null;
+  return (
+    <div className="mt-8 rounded-2xl border border-violet-200 bg-violet-50 p-5">
+      <h2 className="font-bold text-violet-900">
+        {role === "finance_manager" ? "Waiting for your approval" : "Sent back to you"}
+      </h2>
+      <div className="mt-3 grid gap-2">
+        {waiting.map((m) => (
+          <Link key={m.id} to={`/months/${m.id}`} className="rounded-lg bg-white px-4 py-3 text-violet-900 hover:bg-violet-100">
+            <b>{monthLabel(m.period)}</b>
+            {m.returned_note && role !== "finance_manager" && <span className="ml-2 text-sm">– {m.returned_note}</span>}
+            <span className="float-right text-sm">Open →</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
 }

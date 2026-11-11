@@ -51,19 +51,26 @@
   - "Driver is right" / "Keep it – explain why"; AI drafts the reply, accountant edits and sends
   - "Driver is right" can remove the deduction from this month (then recalculate)
   - driver sees the answer under the line on his payslip
+- **Stage 10 – Approve & lock:**
+  - month steps: Calculated → Sent for approval → Approved & locked
+  - accountant "Send for approval" (blocked while driver disputes are waiting)
+  - finance manager "Approve & lock" (blocked until the previous month is approved) or "Send back" with a reason
+  - sent / approved months are locked: no uploads, fixes, fines, recalculation or deduction removal
+  - drivers see "✓ Final" once approved; history of who sent / approved / sent back, with the net at that moment
+  - home page shows months waiting for the manager, and months sent back to the accountant
 - **Fixes:**
   - new columns are added to the database automatically on startup
   - the demo database (`paydesk-demo.db`) is now the default
-- **Tests:** 21 passing (`pytest`)
+- **Tests:** 23 passing (`pytest`)
 
 ## Where we stopped
-- Stage 9 is built and tested (21 tests).
+- Stage 10 is built and tested (23 tests).
 - The `.env` file was overwritten by mistake on 11 Nov and fixed. It must contain one line: `GEMINI_API_KEY=...` (never paste other text into it).
 - Decided (11 Nov 2026): **no CODesk link**. PayDesk stays separate. Shortages and advances keep coming from the adjustments file.
-- **Next action:** push Stage 9 to Git, then start **Stage 10 – Approve & lock**.
+- Approved months can't be unlocked. To start the demo again, make a fresh demo database (see Useful commands).
+- **Next action:** push Stage 10 to Git, then start **Stage 11 – Distribution**.
 
 ## Next (in order)
-10. **Approve & lock:** accountant prepares → finance manager approves → month locked
 11. **Distribution:** one click sends 50 station emails (Outbox page in demo); SAB-style bank Excel file with column mapping; station cash plan
 12. **Cashier page:** mark Paid, driver confirms with PIN, unclaimed salaries, AI cashier help
 13. **Dashboard + AI insights:** paid / unpaid / disputed per station; Ask PayDesk; pattern alerts; payroll forecast; earnings-drop alerts

@@ -94,8 +94,8 @@ def handle_upload(db: Session, month: PayrollMonth, kind: str, filename: str,
                   content: bytes, username: str) -> FileUpload:
     if kind not in FILE_KINDS:
         raise UploadBlocked(f"Unknown file type '{kind}'")
-    if month.status in ("approved", "locked"):
-        raise UploadBlocked("This month is approved/locked - files can't be changed")
+    if month.status in ("submitted", "approved"):
+        raise UploadBlocked("This month is sent for approval or approved - files can't be changed")
     latest = latest_uploads(month)
     for needed in NEEDS_FIRST[kind]:
         if needed not in latest or latest[needed].status != "imported":
@@ -134,6 +134,8 @@ def handle_upload(db: Session, month: PayrollMonth, kind: str, filename: str,
 
 def handle_fixes(db: Session, month: PayrollMonth, upload: FileUpload, issue_ids: list[int],
                  username: str) -> FileUpload:
+    if month.status in ("submitted", "approved"):
+        raise UploadBlocked("This month is sent for approval or approved - files can't be changed")
     path = _pickle_path(upload.id)
     if upload.status != "has_errors" or not path.exists():
         raise UploadBlocked("This file has no fixes waiting")

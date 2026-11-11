@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/me", tags=["driver"])
 is_driver = require_roles(DRIVER)
 
 # A driver sees a month once salaries are calculated. Before approval it is marked "not final".
-VISIBLE_STATUSES = ("calculated",) + FINAL_STATUSES
+VISIBLE_STATUSES = ("calculated", "submitted") + FINAL_STATUSES
 
 QUESTIONS_PER_HOUR = 20                       # keeps the free Gemini limit safe
 _asked: dict[int, deque] = defaultdict(deque)

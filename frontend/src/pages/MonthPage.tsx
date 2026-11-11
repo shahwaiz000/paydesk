@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import ApprovalCard from "../components/ApprovalCard";
 import FinesCard from "../components/FinesCard";
 import SalaryResults from "../components/SalaryResults";
 import UploadCard from "../components/UploadCard";
-import { monthLabel, type FileKind, type MonthDetail } from "../types";
+import { EDITABLE_MONTH, MONTH_STATUS, monthLabel, type FileKind, type MonthDetail } from "../types";
 
 const STEPS: { kind: FileKind; title: string; hint: string; needs: FileKind[] }[] = [
   { kind: "drivers", title: "Driver list", hint: "ID, name, station, joining date, Cash/Bank, IBAN", needs: [] },
@@ -36,6 +37,8 @@ export default function MonthPage() {
   if (!month) return <p className="text-slate-500">Loading…</p>;
 
   const imported = (k: FileKind) => month.files[k]?.status === "imported";
+  const editable = EDITABLE_MONTH.includes(month.status);
+  const hasSalaries = ["calculated", "submitted", "approved"].includes(month.status);
 
   async function upload(kind: FileKind, file: File) {
     const form = new FormData();
@@ -74,6 +77,11 @@ export default function MonthPage() {
           <h1 className="text-2xl font-bold text-slate-800">{monthLabel(month.period)}</h1>
           <p className="text-slate-500 mt-1">{month.files_imported} of 4 files imported</p>
         </div>
+        {!editable && (
+          <span className={`rounded-full px-4 py-2 text-sm font-semibold ${MONTH_STATUS[month.status]?.style ?? ""}`}>
+            {MONTH_STATUS[month.status]?.label ?? month.status}
+          </span>
+        )}
         {(month.status === "ready" || month.status === "calculated") && (
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
@@ -94,7 +102,18 @@ export default function MonthPage() {
 
       {calcError && <p className="mt-3 text-red-600">{calcError}</p>}
 
-      {month.status === "calculated" && <SalaryResults monthId={month.id} refreshKey={refreshKey} />}
+      {hasSalaries && (
+        <ApprovalCard
+          monthId={month.id}
+          refreshKey={refreshKey}
+          onChanged={() => {
+            load();
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
+
+      {hasSalaries && <SalaryResults monthId={month.id} refreshKey={refreshKey} />}
 
       {user?.role === "accountant" && (month.status === "ready" || month.status === "calculated") && (
         <FinesCard monthId={month.id} onAdded={load} />
@@ -112,7 +131,7 @@ export default function MonthPage() {
               hint={s.hint}
               file={month.files[s.kind]}
               blockedReason={missing.length ? `Upload the ${missing.map((m) => NAMES[m]).join(" and ")} first` : null}
-              canEdit={user?.role === "accountant" && month.status !== "locked"}
+              canEdit={user?.role === "accountant" && editable}
               onUpload={(f) => upload(s.kind, f)}
               onFix={fix}
             />

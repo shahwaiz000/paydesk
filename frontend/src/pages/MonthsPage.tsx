@@ -2,14 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { monthLabel, type MonthSummary } from "../types";
+import { MONTH_STATUS, monthLabel, type MonthSummary } from "../types";
 
-const STATUS_STYLE: Record<string, string> = {
-  draft: "bg-amber-50 text-amber-700",
-  ready: "bg-emerald-50 text-emerald-700",
-  calculated: "bg-indigo-50 text-indigo-700",
-  locked: "bg-slate-100 text-slate-600",
-};
 
 export default function MonthsPage() {
   const { user } = useAuth();
@@ -71,8 +65,8 @@ export default function MonthsPage() {
               <p className="text-lg font-semibold text-slate-800">{monthLabel(m.period)}</p>
               <p className="text-sm text-slate-500">{m.files_imported} of 4 files imported</p>
             </div>
-            <span className={`rounded-full px-3 py-1 text-sm font-medium capitalize ${STATUS_STYLE[m.status] ?? ""}`}>
-              {m.status}
+            <span className={`rounded-full px-3 py-1 text-sm font-medium ${MONTH_STATUS[m.status]?.style ?? ""}`}>
+              {MONTH_STATUS[m.status]?.label ?? m.status}
             </span>
           </Link>
         ))}

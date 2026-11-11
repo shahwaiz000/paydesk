@@ -37,6 +37,39 @@ export interface MonthSummary {
   period: string;
   status: string;
   files_imported: number;
+  returned_note: string | null;
+}
+
+// ------------------------------------------------------------------ Approve & lock (Stage 10)
+
+export const MONTH_STATUS: Record<string, { label: string; style: string }> = {
+  draft: { label: "Uploading files", style: "bg-amber-50 text-amber-700" },
+  ready: { label: "Ready to calculate", style: "bg-emerald-50 text-emerald-700" },
+  calculated: { label: "Calculated", style: "bg-indigo-50 text-indigo-700" },
+  submitted: { label: "Waiting for approval", style: "bg-violet-50 text-violet-700" },
+  approved: { label: "🔒 Approved & locked", style: "bg-slate-800 text-white" },
+};
+
+export const EDITABLE_MONTH = ["draft", "ready", "calculated"];
+
+export interface ApprovalCheck {
+  key: string;
+  ok: boolean;
+  blocking: boolean;
+  approve_only?: boolean;
+  text: string;
+}
+
+export interface Approval {
+  status: string;
+  submitted_by: string | null;
+  submitted_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  returned_note: string | null;
+  totals: { drivers: number; net: number; deductions: number; cash_net: number; bank_net: number };
+  checks: ApprovalCheck[];
+  events: { action: "submitted" | "approved" | "sent_back"; by: string; at: string | null; note: string | null; totals: { net?: number } }[];
 }
 
 export interface MonthDetail extends MonthSummary {

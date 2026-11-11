@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/disputes", tags=["disputes"])
 can_view = require_roles(ACCOUNTANT, FINANCE_MANAGER)
 can_answer = require_roles(ACCOUNTANT)
 
-EDITABLE = ("ready", "calculated")      # approved / locked months can't be changed
+EDITABLE = ("ready", "calculated")      # sent-for-approval / approved months can't be changed
 
 
 class DraftIn(BaseModel):
@@ -133,7 +133,7 @@ def answer(dispute_id: int, body: AnswerIn, db: Session = Depends(get_db), user:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only remove a deduction when you agree with the driver")
         if month.status not in EDITABLE:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                                "This month is approved/locked - correct it in next month's adjustments file")
+                                "This month is sent for approval or approved - correct it in next month's adjustments file")
         adj = matching_adjustment(db, d)
         if adj is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,

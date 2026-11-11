@@ -362,3 +362,73 @@ def test_reject_keeps_deduction(client):
                       json={"decision": "rejected", "reply": "Hello, the customer did not receive it."})
     assert res.json()["dispute"]["status"] == "rejected"
     assert client.get("/api/months/1/salaries/D3", headers=acc).json()["deductions_applied"] == 785
+
+
+# ------------------------------------------------------------------ Stage 10: approve & lock
+
+def test_approve_and_lock(client):
+    acc = login(client, "accountant", "demo123")
+    mgr = login(client, "manager", "demo123")
+    drv = login(client, "d1", "1234")
+
+    # An open dispute blocks sending
+    slip = client.get("/api/me/payslips/1", headers=drv).json()
+    fine = next(l for l in slip["lines"] if l["type"] == "Traffic fine")
+    client.post("/api/me/payslips/1/disputes", headers=drv,
+                json={"topic": "deduction", "line_key": fine["key"], "message": "I was not driving that day"})
+    res = client.post("/api/months/1/submit", headers=acc, json={})
+    assert res.status_code == 400 and "dispute" in res.json()["detail"]
+    d = client.get("/api/disputes", headers=acc).json()["items"][0]
+    client.post(f"/api/disputes/{d['id']}/answer", headers=acc,
+                json={"decision": "rejected", "reply": "Hello, the plate was with you that day."})
+
+    assert client.post("/api/months/1/submit", headers=mgr, json={}).status_code == 403   # manager can't send
+    res = client.post("/api/months/1/submit", headers=acc, json={"note": "October ready"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "submitted"
+
+    # Locked while waiting: no uploads, no recalculation, no fines
+    assert client.post("/api/months/1/calculate", headers=acc).status_code == 400
+    up = client.post("/api/months/1/upload/adjustments", headers=acc, files={"file": ("a.csv", b"x")})
+    assert up.status_code == 400
+    assert client.get("/api/me/payslips/1", headers=drv).json()["final"] is False
+
+    # Manager sends it back with a reason -> accountant can work again
+    assert client.post("/api/months/1/send-back", headers=mgr, json={"reason": "no"}).status_code == 422
+    res = client.post("/api/months/1/send-back", headers=mgr, json={"reason": "Check the D3 lost parcel"})
+    assert res.json()["status"] == "calculated" and res.json()["returned_note"] == "Check the D3 lost parcel"
+    assert client.get("/api/months/1", headers=acc).json()["returned_note"] == "Check the D3 lost parcel"
+
+    # Send again and approve
+    client.post("/api/months/1/submit", headers=acc, json={})
+    assert client.post("/api/months/1/approve", headers=acc).status_code == 403          # accountant can't approve
+    res = client.post("/api/months/1/approve", headers=mgr)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["status"] == "approved" and data["approved_by"] == "manager"
+    assert [e["action"] for e in data["events"]] == ["submitted", "sent_back", "submitted", "approved"]
+    assert data["events"][-1]["totals"]["net"] == data["totals"]["net"]
+
+    # Final for drivers; still locked; can't be sent back any more
+    assert client.get("/api/me/payslips/1", headers=drv).json()["final"] is True
+    assert client.get("/api/me/payslips", headers=drv).json()["months"][0]["final"] is True
+    assert client.post("/api/months/1/calculate", headers=acc).status_code == 400
+    assert client.post("/api/months/1/send-back", headers=mgr, json={"reason": "too late now"}).status_code == 400
+
+
+def test_previous_month_must_be_approved_first(client):
+    acc = login(client, "accountant", "demo123")
+    mgr = login(client, "manager", "demo123")
+    from app.database import SessionLocal
+    from app.models import PayrollMonth
+
+    with SessionLocal() as db:
+        nov = PayrollMonth(period="2026-12", status="submitted")
+        nov2 = PayrollMonth(period="2026-11", status="calculated")
+        db.add_all([nov, nov2])
+        db.commit()
+        dec_id = nov.id
+    res = client.post(f"/api/months/{dec_id}/approve", headers=mgr)
+    assert res.status_code == 400 and "Approve 2026-11 first" in res.json()["detail"]
+    checks = client.get(f"/api/months/{dec_id}/approval", headers=acc).json()["checks"]
+    assert any(c["key"] == "previous" and not c["ok"] for c in checks)

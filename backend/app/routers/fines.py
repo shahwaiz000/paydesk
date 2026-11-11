@@ -35,8 +35,8 @@ class AddFines(BaseModel):
 
 
 def _editable(month):
-    if month.status in ("approved", "locked"):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This month is approved/locked")
+    if month.status in ("submitted", "approved"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This month is sent for approval or approved - it can't be changed")
     if month.status == "draft":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Import all 4 month files first")
 

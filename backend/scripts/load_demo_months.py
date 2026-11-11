@@ -39,8 +39,8 @@ def main():
                 month = PayrollMonth(period=period)
                 db.add(month)
                 db.commit()
-            if month.status in ("approved", "locked"):
-                print(f"{period}: locked - skipped")
+            if month.status in ("submitted", "approved"):
+                print(f"{period}: sent for approval / approved - skipped")
                 continue
             print(f"{period}:")
             for kind in FILE_KINDS:

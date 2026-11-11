@@ -74,10 +74,17 @@ class PayrollMonth(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     period: Mapped[str] = mapped_column(String(7), unique=True)        # "2026-10"
-    status: Mapped[str] = mapped_column(String(20), default="draft")   # draft -> ready -> ...
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    # draft -> ready (4 files clean) -> calculated -> submitted (waiting for approval) -> approved (locked)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     ai_summary: Mapped[str | None] = mapped_column(Text)               # AI-written month summary
     ai_summary_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Stage 10: accountant sends -> finance manager approves (month locked) or sends back
+    submitted_by: Mapped[str | None] = mapped_column(String(50))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    approved_by: Mapped[str | None] = mapped_column(String(50))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    returned_note: Mapped[str | None] = mapped_column(String(400))   # why the manager sent it back
 
     uploads: Mapped[list["FileUpload"]] = relationship(
         back_populates="month", cascade="all, delete-orphan", order_by="FileUpload.id"
@@ -255,3 +262,23 @@ class Dispute(Base):
     driver: Mapped[Driver] = relationship()
     station: Mapped[Station] = relationship()
     month: Mapped[PayrollMonth] = relationship()
+
+
+# ------------------------------------------------------------------ Stage 10
+
+MONTH_STATUSES = ("draft", "ready", "calculated", "submitted", "approved")
+LOCKED_STATUSES = ("submitted", "approved")      # nobody can change files, fines or salaries
+
+
+class MonthEvent(Base):
+    """History of a payroll month: who sent it, approved it or sent it back, and when. Only ever added to."""
+
+    __tablename__ = "month_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month_id: Mapped[int] = mapped_column(ForeignKey("payroll_months.id"), index=True)
+    action: Mapped[str] = mapped_column(String(20))        # submitted / approved / sent_back
+    by: Mapped[str] = mapped_column(String(50))
+    at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    note: Mapped[str | None] = mapped_column(String(400))
+    totals: Mapped[dict] = mapped_column(JSON, default=dict)   # drivers / net at that moment

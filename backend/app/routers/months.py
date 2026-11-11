@@ -42,6 +42,7 @@ def month_out(month: PayrollMonth, with_files: bool = True) -> dict:
     latest = latest_uploads(month)
     data = {
         "id": month.id, "period": month.period, "status": month.status,
+        "returned_note": month.returned_note,
         "files_imported": sum(1 for k in FILE_KINDS if k in latest and latest[k].status == "imported"),
     }
     if with_files:
