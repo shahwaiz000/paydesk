@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import { DisputeStatus, ReportForm } from "../components/DisputeParts";
 import PayslipChat from "../components/PayslipChat";
 import { StatusBadge, sar } from "../format";
-import { lineReason, monthLabel, type MyPayslip } from "../types";
+import { TOPIC_LABELS, lineReason, monthLabel, type Dispute, type MyPayslip } from "../types";
 
 function Row({ label, detail, amount, bold, minus }: { label: string; detail?: string; amount: number; bold?: boolean; minus?: boolean }) {
   return (
@@ -29,6 +30,7 @@ export default function MyPayslipPage() {
   const { monthId } = useParams();
   const [p, setP] = useState<MyPayslip | null>(null);
   const [error, setError] = useState("");
+  const [form, setForm] = useState<string | null>(null); // which "I don't agree" form is open
 
   useEffect(() => {
     api<MyPayslip>(`/api/me/payslips/${monthId}`).then(setP).catch((e: Error) => setError(e.message));
@@ -47,6 +49,13 @@ export default function MyPayslipPage() {
   const bonuses = p.lines.filter((l) => l.kind === "Bonus");
   const daily = p.daily.filter((d) => d.day);
   const best = daily.reduce((m, d) => Math.max(m, d.prepaid + d.cod), 0);
+  const lineKeys = new Set(deductions.map((d) => d.key));
+  const forLine = (key: string) => [...p.disputes].reverse().find((d) => d.line_key === key);
+  const otherReports = p.disputes.filter((d) => !d.line_key || !lineKeys.has(d.line_key));
+  const sent = (all: Dispute[]) => {
+    setP({ ...p, disputes: all });
+    setForm(null);
+  };
 
   return (
     <div className="mx-auto max-w-xl">
@@ -120,6 +129,15 @@ export default function MyPayslipPage() {
                 {sar(d.amount_due)} due · {sar(d.amount_applied)} taken now · {sar(d.carried)} moves to next month
               </p>
             )}
+            {forLine(d.key) && <DisputeStatus d={forLine(d.key)!} />}
+            {forLine(d.key)?.status !== "open" && form !== d.key && (
+              <button onClick={() => setForm(d.key)} className="mt-1 text-xs font-medium text-indigo-600 hover:underline">
+                I don't agree
+              </button>
+            )}
+            {form === d.key && (
+              <ReportForm monthId={p.month_id} lineKey={d.key} onSent={sent} onCancel={() => setForm(null)} />
+            )}
           </div>
         ))}
         {deductions.length > 0 && (
@@ -138,6 +156,32 @@ export default function MyPayslipPage() {
       <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-900 p-5 text-white">
         <span className="font-semibold">You receive</span>
         <span className="text-2xl font-bold">SAR {sar(p.net)}</span>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-slate-800">Something wrong?</h2>
+            <p className="text-sm text-slate-500">Deliveries, days worked or anything else on this payslip.</p>
+          </div>
+          {form !== "other" && (
+            <button
+              onClick={() => setForm("other")}
+              className="whitespace-nowrap rounded-lg border border-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+            >
+              Report a problem
+            </button>
+          )}
+        </div>
+        {form === "other" && <ReportForm monthId={p.month_id} onSent={sent} onCancel={() => setForm(null)} />}
+        {otherReports.map((d) => (
+          <div key={d.id} className="mt-3">
+            <p className="text-sm font-medium text-slate-700">
+              {d.line ? `${d.line.type} ${sar(d.line.amount)}` : TOPIC_LABELS[d.topic]}
+            </p>
+            <DisputeStatus d={d} />
+          </div>
+        ))}
       </div>
 
       <PayslipChat key={p.month_id} monthId={p.month_id} enabled={p.ai_enabled} />

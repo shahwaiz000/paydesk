@@ -218,3 +218,40 @@ class SalaryLine(Base):
     carried_from: Mapped[str | None] = mapped_column(String(7))  # "2026-09" if carried from an earlier month
 
     salary: Mapped[Salary] = relationship(back_populates="lines")
+
+
+# ------------------------------------------------------------------ Stage 9
+
+DISPUTE_TOPICS = ("deduction", "deliveries", "days", "other")
+
+
+class Dispute(Base):
+    """A driver says "I don't agree". The line he means is copied here, because payslip lines are
+    rebuilt every time salaries are recalculated."""
+
+    __tablename__ = "disputes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month_id: Mapped[int] = mapped_column(ForeignKey("payroll_months.id"), index=True)
+    driver_id: Mapped[str] = mapped_column(ForeignKey("drivers.id"), index=True)
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id"), index=True)
+    topic: Mapped[str] = mapped_column(String(20))                    # deduction / deliveries / days / other
+    line_key: Mapped[str | None] = mapped_column(String(200))          # which deduction line (topic = deduction)
+    line_type: Mapped[str | None] = mapped_column(String(20))
+    line_amount: Mapped[float | None] = mapped_column(Float)
+    line_day: Mapped[date | None] = mapped_column(Date)
+    line_reference: Mapped[str | None] = mapped_column(String(50))
+    line_note: Mapped[str | None] = mapped_column(String(200))
+    line_carried_from: Mapped[str | None] = mapped_column(String(7))
+    message: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(10), default="open")   # open / accepted / rejected
+    reply: Mapped[str | None] = mapped_column(Text)
+    ai_draft: Mapped[str | None] = mapped_column(Text)
+    deduction_removed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime)
+    answered_by: Mapped[str | None] = mapped_column(String(50))
+
+    driver: Mapped[Driver] = relationship()
+    station: Mapped[Station] = relationship()
+    month: Mapped[PayrollMonth] = relationship()

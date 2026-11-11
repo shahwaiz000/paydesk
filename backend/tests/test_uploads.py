@@ -273,3 +273,92 @@ def test_payslip_chat(client, monkeypatch):
 
     monkeypatch.setattr(me_router, "QUESTIONS_PER_HOUR", 1)
     assert client.post("/api/me/payslips/1/ask", headers=h, json={"question": "again?"}).status_code == 429
+
+
+# ------------------------------------------------------------------ Stage 9: disputes
+
+def test_driver_reports_a_deduction(client):
+    h = login(client, "d2", "1234")
+    slip = client.get("/api/me/payslips/1", headers=h).json()
+    advance = next(l for l in slip["lines"] if l["type"] == "Advance")
+    assert slip["disputes"] == []
+
+    res = client.post("/api/me/payslips/1/disputes", headers=h,
+                      json={"topic": "deduction", "line_key": advance["key"], "message": "I already paid this back"})
+    assert res.status_code == 200, res.text
+    assert res.json()["dispute"]["status"] == "open"
+    assert res.json()["dispute"]["line"]["reference"] == "ADV-1"
+
+    again = client.post("/api/me/payslips/1/disputes", headers=h,
+                        json={"topic": "deduction", "line_key": advance["key"], "message": "please check"})
+    assert again.status_code == 400                                  # one open report per line
+    fake = client.post("/api/me/payslips/1/disputes", headers=h,
+                       json={"topic": "deduction", "line_key": "Deduction|Traffic fine|TF-1|2026-10-12|300.00|",
+                             "message": "not mine"})
+    assert fake.status_code == 400                                   # D1's line, not his
+
+    other = login(client, "d1", "1234")
+    assert client.get("/api/me/payslips/1", headers=other).json()["disputes"] == []   # private
+
+
+def test_accountant_answers_and_removes_deduction(client, monkeypatch):
+    from app.ai import disputes as ai_disputes
+
+    sent = {}
+
+    def fake_generate(prompt, fast=False):
+        sent["prompt"] = prompt
+        return "Hello, you are right. We removed the advance."
+
+    monkeypatch.setattr(ai_disputes, "generate", fake_generate)
+    cashier = login(client, "ruh-01", "demo123")
+    assert client.get("/api/disputes", headers=cashier).status_code == 403
+
+    h = login(client, "accountant", "demo123")
+    inbox = client.get("/api/disputes", headers=h).json()
+    assert inbox["counts"]["open"] == 1
+    d = inbox["items"][0]
+    assert d["driver_id"] == "D2" and d["can_remove"] is True
+    assert client.get("/api/disputes/count", headers=h).json() == {"open": 1}
+
+    draft = client.post(f"/api/disputes/{d['id']}/draft", headers=h, json={"decision": "accepted"}).json()["draft"]
+    assert draft.startswith("Hello")
+    assert "I already paid this back" in sent["prompt"] and "Test Driver Two" not in sent["prompt"]
+
+    manager = login(client, "manager", "demo123")
+    assert client.post(f"/api/disputes/{d['id']}/answer", headers=manager,
+                       json={"decision": "accepted", "reply": "ok"}).status_code == 403   # can read, not answer
+
+    res = client.post(f"/api/disputes/{d['id']}/answer", headers=h,
+                      json={"decision": "accepted", "reply": draft, "remove_deduction": True})
+    assert res.status_code == 200, res.text
+    assert "Calculate salaries" in res.json()["note"]
+    assert client.get("/api/months/1", headers=h).json()["status"] == "ready"
+    assert client.post(f"/api/disputes/{d['id']}/answer", headers=h,
+                       json={"decision": "rejected", "reply": "again"}).status_code == 400
+
+    client.post("/api/months/1/calculate", headers=h)
+    assert client.get("/api/months/1/salaries/D2", headers=h).json()["net"] == 1200   # advance gone
+
+    driver = login(client, "d2", "1234")
+    mine = client.get("/api/me/payslips/1", headers=driver).json()["disputes"]
+    assert mine[0]["status"] == "accepted" and mine[0]["reply"].startswith("Hello")
+    assert mine[0]["deduction_removed"] is True
+
+
+def test_reject_keeps_deduction(client):
+    h = login(client, "d3", "1234")
+    slip = client.get("/api/me/payslips/1", headers=h).json()
+    parcel = next(l for l in slip["lines"] if l["type"] == "Lost parcel")
+    d = client.post("/api/me/payslips/1/disputes", headers=h,
+                    json={"topic": "deduction", "line_key": parcel["key"], "message": "I delivered that parcel"}
+                    ).json()["dispute"]
+    acc = login(client, "accountant", "demo123")
+    res = client.post(f"/api/disputes/{d['id']}/answer", headers=acc,
+                      json={"decision": "rejected", "reply": "Hello, the customer did not receive it.",
+                            "remove_deduction": True})
+    assert res.status_code == 400                                    # can't remove when rejecting
+    res = client.post(f"/api/disputes/{d['id']}/answer", headers=acc,
+                      json={"decision": "rejected", "reply": "Hello, the customer did not receive it."})
+    assert res.json()["dispute"]["status"] == "rejected"
+    assert client.get("/api/months/1/salaries/D3", headers=acc).json()["deductions_applied"] == 785

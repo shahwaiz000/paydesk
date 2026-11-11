@@ -44,18 +44,25 @@
   - "Why is my salary this?" AI chat: sees only that driver's payslip, no name/Iqama/IBAN sent, 20 questions an hour
   - drivers see a month once it is calculated, marked "Not final yet" until approved (Stage 10)
   - works on a phone screen
+- **Stage 9 – Disputes:**
+  - driver taps "I don't agree" on a deduction, or "Report a problem" (deliveries, days, other)
+  - one open report per line, max 5 open per month; server checks the line is on his own payslip
+  - accountant inbox (Disputes page, red badge with waiting count); finance manager can read only
+  - "Driver is right" / "Keep it – explain why"; AI drafts the reply, accountant edits and sends
+  - "Driver is right" can remove the deduction from this month (then recalculate)
+  - driver sees the answer under the line on his payslip
 - **Fixes:**
   - new columns are added to the database automatically on startup
   - the demo database (`paydesk-demo.db`) is now the default
-- **Tests:** 18 passing (`pytest`)
+- **Tests:** 21 passing (`pytest`)
 
 ## Where we stopped
-- Stage 8 is built and tested (18 tests).
+- Stage 9 is built and tested (21 tests).
+- The `.env` file was overwritten by mistake on 11 Nov and fixed. It must contain one line: `GEMINI_API_KEY=...` (never paste other text into it).
 - Decided (11 Nov 2026): **no CODesk link**. PayDesk stays separate. Shortages and advances keep coming from the adjustments file.
-- **Next action:** push Stage 8 to Git, then start **Stage 9 – Disputes**.
+- **Next action:** push Stage 9 to Git, then start **Stage 10 – Approve & lock**.
 
 ## Next (in order)
-9. **Disputes:** driver taps "I don't agree" on a deduction line; accountant inbox; AI-drafted replies
 10. **Approve & lock:** accountant prepares → finance manager approves → month locked
 11. **Distribution:** one click sends 50 station emails (Outbox page in demo); SAB-style bank Excel file with column mapping; station cash plan
 12. **Cashier page:** mark Paid, driver confirms with PIN, unclaimed salaries, AI cashier help

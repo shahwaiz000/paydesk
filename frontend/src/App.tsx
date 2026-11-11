@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
+import DisputesPage from "./pages/DisputesPage";
 import DriverPage from "./pages/DriverPage";
 import DriversPage from "./pages/DriversPage";
 import HomePage from "./pages/HomePage";
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/months/:id" element={<MonthPage />} />
         <Route path="/drivers" element={<DriversPage />} />
         <Route path="/drivers/:id" element={<DriverPage />} />
+        <Route path="/disputes" element={<DisputesPage />} />
         <Route path="/payslips/:monthId" element={<MyPayslipPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

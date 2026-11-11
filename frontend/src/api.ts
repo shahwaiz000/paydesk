@@ -2,6 +2,7 @@
 
 export const API_URL = "http://localhost:8001";
 const TOKEN_KEY = "paydesk_token";
+export const DISPUTES_CHANGED = "paydesk:disputes-changed"; // tells the header badge to refresh
 
 export type Role = "accountant" | "finance_manager" | "cashier" | "driver";
 

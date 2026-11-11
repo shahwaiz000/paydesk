@@ -51,6 +51,7 @@ export function monthLabel(period: string): string {
 // ------------------------------------------------------------------ Payslips
 
 export interface PayslipLine {
+  key: string;
   kind: "Deduction" | "Bonus";
   type: string;
   amount_due: number;
@@ -99,6 +100,51 @@ export interface Payslip {
 export interface MyPayslip extends Payslip {
   in_words: string[];
   ai_enabled: boolean;
+  disputes: Dispute[];
+}
+
+// ------------------------------------------------------------------ Disputes (Stage 9)
+
+export type DisputeTopic = "deduction" | "deliveries" | "days" | "other";
+
+export const TOPIC_LABELS: Record<DisputeTopic, string> = {
+  deduction: "Deduction",
+  deliveries: "Number of deliveries",
+  days: "Days worked",
+  other: "Something else",
+};
+
+export interface Dispute {
+  id: number;
+  month_id: number;
+  period: string;
+  topic: DisputeTopic;
+  line_key: string | null;
+  line: {
+    type: string;
+    amount: number;
+    day: string | null;
+    reference: string | null;
+    note: string | null;
+    carried_from: string | null;
+  } | null;
+  message: string;
+  status: "open" | "accepted" | "rejected";
+  reply: string | null;
+  deduction_removed: boolean;
+  created_at: string | null;
+  answered_at: string | null;
+}
+
+/** What the accountant / finance manager sees in the inbox. */
+export interface InboxDispute extends Dispute {
+  driver_id: string;
+  driver_name: string;
+  station: string;
+  station_code: string;
+  answered_by: string | null;
+  ai_draft: string | null;
+  can_remove: boolean;
 }
 
 export interface MyPayslips {

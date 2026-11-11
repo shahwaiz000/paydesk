@@ -121,6 +121,12 @@ def payslip(month_id: int, driver_id: str, db: Session = Depends(get_db), user: 
     return build_payslip(db, month, s)
 
 
+def line_key(l) -> str:
+    """Stays the same after a recalculation, so a dispute can find its line again."""
+    return "|".join([l.kind, l.type, l.reference or "", l.day.isoformat() if l.day else "",
+                     f"{l.amount_due:.2f}", l.carried_from or ""])
+
+
 def build_payslip(db: Session, month: PayrollMonth, s: Salary) -> dict:
     """Everything on one payslip: totals, rates, every deduction/bonus line and the daily deliveries."""
     days = db.execute(
@@ -141,7 +147,7 @@ def build_payslip(db: Session, month: PayrollMonth, s: Salary) -> dict:
         "joining_date": s.driver.joining_date.isoformat(),
         "leaving_date": s.driver.leaving_date.isoformat() if s.driver.leaving_date else None,
         "lines": [{
-            "kind": l.kind, "type": l.type, "amount_due": l.amount_due, "amount_applied": l.amount_applied,
+            "key": line_key(l), "kind": l.kind, "type": l.type, "amount_due": l.amount_due, "amount_applied": l.amount_applied,
             "carried": money(l.amount_due - l.amount_applied) if l.kind == "Deduction" else 0,
             "day": l.day.isoformat() if l.day else None, "reference": l.reference, "note": l.note,
             "plate_no": l.plate_no, "carried_from": l.carried_from,

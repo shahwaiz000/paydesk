@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ROLE_LABELS } from "../api";
+import { DISPUTES_CHANGED, ROLE_LABELS, api } from "../api";
 import { useAuth } from "../auth";
 
 export default function Layout() {
@@ -8,6 +8,22 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
+  const [openDisputes, setOpenDisputes] = useState(0);
+  const staff = user?.role === "accountant" || user?.role === "finance_manager";
+
+  // Badge on "Disputes": how many drivers are waiting for an answer
+  useEffect(() => {
+    if (!staff) return;
+    const refresh = () =>
+      api<{ open: number }>("/api/disputes/count").then((d) => setOpenDisputes(d.open)).catch(() => {});
+    refresh();
+    window.addEventListener(DISPUTES_CHANGED, refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      window.removeEventListener(DISPUTES_CHANGED, refresh);
+      window.clearInterval(timer);
+    };
+  }, [staff, location.pathname]);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-slate-500">Loading…</div>;
@@ -34,6 +50,7 @@ export default function Layout() {
                   { to: "/", label: "Home" },
                   ...(user.role === "cashier" ? [] : [{ to: "/months", label: "Payroll months" }]),
                   { to: "/drivers", label: "Drivers" },
+                  ...(staff ? [{ to: "/disputes", label: "Disputes" }] : []),
                 ].map((l) => (
                   <NavLink
                     key={l.to}
@@ -44,6 +61,11 @@ export default function Layout() {
                     }
                   >
                     {l.label}
+                    {l.to === "/disputes" && openDisputes > 0 && (
+                      <span className="ml-1.5 rounded-full bg-red-500 px-1.5 py-0.5 text-xs font-semibold text-white">
+                        {openDisputes}
+                      </span>
+                    )}
                   </NavLink>
                 ))}
               </nav>
