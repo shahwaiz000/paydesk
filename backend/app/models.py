@@ -7,7 +7,7 @@ Later stages add salaries, payments and disputes.
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -27,6 +27,7 @@ class Station(Base):
     code: Mapped[str] = mapped_column(String(20), unique=True, index=True)   # RUH-01
     name: Mapped[str] = mapped_column(String(100))                           # Riyadh - Azizia
     city: Mapped[str] = mapped_column(String(50))                            # Riyadh
+    email: Mapped[str | None] = mapped_column(String(120))                   # station cashier email (Stage 11)
 
     drivers: Mapped[list["Driver"]] = relationship(back_populates="station")
 
@@ -282,3 +283,34 @@ class MonthEvent(Base):
     at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     note: Mapped[str | None] = mapped_column(String(400))
     totals: Mapped[dict] = mapped_column(JSON, default=dict)   # drivers / net at that moment
+
+
+# ------------------------------------------------------------------ Stage 11
+
+class OutboxEmail(Base):
+    """One salary email to one station (after the month is approved).
+
+    Demo mode: emails are NOT really sent. They are saved here and shown on the Outbox page,
+    with the Excel attachment the station cashier would get. Only ever added to.
+    """
+
+    __tablename__ = "outbox_emails"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month_id: Mapped[int] = mapped_column(ForeignKey("payroll_months.id"), index=True)
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id"), index=True)
+    to_address: Mapped[str] = mapped_column(String(120))
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    attachment_name: Mapped[str] = mapped_column(String(120))
+    attachment: Mapped[bytes] = mapped_column(LargeBinary)
+    drivers: Mapped[int] = mapped_column(Integer)
+    cash_drivers: Mapped[int] = mapped_column(Integer)
+    cash_total: Mapped[float] = mapped_column(Float)
+    bank_drivers: Mapped[int] = mapped_column(Integer)
+    bank_total: Mapped[float] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(20), default="demo")   # demo = saved, not really sent
+    sent_by: Mapped[str] = mapped_column(String(50))
+    sent_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    station: Mapped[Station] = relationship()

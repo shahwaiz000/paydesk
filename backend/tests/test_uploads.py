@@ -432,3 +432,48 @@ def test_previous_month_must_be_approved_first(client):
     assert res.status_code == 400 and "Approve 2026-11 first" in res.json()["detail"]
     checks = client.get(f"/api/months/{dec_id}/approval", headers=acc).json()["checks"]
     assert any(c["key"] == "previous" and not c["ok"] for c in checks)
+
+
+# ------------------------------------------------------------------ Stage 11: station emails (Outbox)
+
+def test_station_emails(client):
+    acc = login(client, "accountant", "demo123")
+    mgr = login(client, "manager", "demo123")
+    cashier = login(client, "ruh-01", "demo123")
+
+    # Month 2026-11 is only calculated -> can't send yet
+    months = {m["period"]: m["id"] for m in client.get("/api/months", headers=acc).json()}
+    res = client.post(f"/api/months/{months['2026-11']}/outbox/send", headers=acc)
+    assert res.status_code == 400 and "approve" in res.json()["detail"]
+
+    # October is approved (test above): only the accountant can send, and only once
+    assert client.get("/api/months/1/outbox", headers=cashier).status_code == 403
+    assert client.post("/api/months/1/outbox/send", headers=mgr).status_code == 403
+    before = client.get("/api/months/1/outbox", headers=acc).json()
+    assert before["can_send"] is True and before["sent"] == 0 and before["stations"] == 2
+
+    res = client.post("/api/months/1/outbox/send", headers=acc)
+    assert res.status_code == 200, res.text
+    box = res.json()
+    assert box["sent"] == 2 and box["can_send"] is False
+    assert [e["station_code"] for e in box["emails"]] == ["JED-01", "RUH-01"]
+    ruh = box["emails"][1]
+    assert ruh["to"] == "ruh-01@stations.paydesk.demo"
+    assert ruh["drivers"] == 2 and ruh["cash_drivers"] == 1 and ruh["bank_drivers"] == 1
+
+    # Totals match the approved month
+    totals = client.get("/api/months/1/approval", headers=acc).json()["totals"]
+    assert round(box["cash_total"], 2) == totals["cash_net"]
+    assert round(box["bank_total"], 2) == totals["bank_net"]
+
+    # Open one email (manager can read) and download its Excel file
+    full = client.get(f"/api/months/1/outbox/{ruh['id']}", headers=mgr).json()
+    assert "D2" in full["body"] and "D1" not in full["body"].split("pay these drivers:")[1].split("Pay each")[0]
+    xl = client.get(f"/api/months/1/outbox/{ruh['id']}/attachment", headers=acc)
+    assert xl.status_code == 200 and xl.content[:2] == b"PK"
+    sheet = pd.read_excel(io.BytesIO(xl.content), header=None)
+    assert "D2" in sheet.astype(str).values and "D1" in sheet.astype(str).values
+
+    # Sending twice is blocked
+    res = client.post("/api/months/1/outbox/send", headers=acc)
+    assert res.status_code == 400 and "already" in res.json()["detail"]
