@@ -45,10 +45,11 @@
 ## Where we stopped
 - Driver search is built and tested.
 - The login problem is fixed: default database is now `paydesk-demo.db`.
-- **Next action:** check that the latest work is pushed to Git, then start **Stage 7**.
+- Latest work is pushed to Git.
+- Decided (11 Nov 2026): **no CODesk link**. PayDesk stays separate. Shortages and advances keep coming from the adjustments file.
+- **Next action:** start **Stage 8 – Driver payslip page**.
 
 ## Next (in order)
-7. **CODesk link:** COD shortages and driver advances come into PayDesk automatically from CODesk (port 8000)
 8. **Driver payslip page:** driver login view, daily breakdown, past months, "Why is my salary this?" AI chat (driver's own data only)
 9. **Disputes:** driver taps "I don't agree" on a deduction line; accountant inbox; AI-drafted replies
 10. **Approve & lock:** accountant prepares → finance manager approves → month locked
