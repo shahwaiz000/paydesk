@@ -63,12 +63,25 @@
   - the demo database (`paydesk-demo.db`) is now the default
 - **Tests:** 23 passing (`pytest`)
 
-## Where we stopped
-- Stage 10 is built and tested (23 tests).
-- The `.env` file was overwritten by mistake on 11 Nov and fixed. It must contain one line: `GEMINI_API_KEY=...` (never paste other text into it).
-- Decided (11 Nov 2026): **no CODesk link**. PayDesk stays separate. Shortages and advances keep coming from the adjustments file.
+## Where we stopped (11 Nov 2026)
+- Stages 8, 9 and 10 are built and tested today (23 tests passing).
+- Stage 8 and Stage 9 are pushed to Git. Stage 10 files are in the folder - push them if not done yet:
+  `git add .` → `git commit -m "Stage 10: approve and lock months, send back, history"` → `git push`
+- **Next action:** start **Stage 11 – Distribution**.
+
+## Done today (11 Nov 2026)
+- Decided: **no CODesk link**. PayDesk stays separate. Shortages and advances keep coming from the adjustments file.
+- Stage 8 – driver payslip page + "Why is my salary this?" AI chat.
+- AI chat made faster: it uses the quick flash-lite model first and keeps the Google connection open.
+  Window 3 prints `[ai] <model> answered in X s` after every AI answer.
+- Fixed `.env`: it had been overwritten by an old progress note, so AI was off.
+  It must contain one line only: `GEMINI_API_KEY=...` (never paste other text into it).
+- Stage 9 – driver disputes + accountant inbox + AI-drafted replies.
+- Fix: choosing "Driver is right" now ticks "Remove this deduction" automatically. If the deduction is not removed,
+  the driver sees "the payroll team will correct it".
+  (Sohel D10001 was not a bug: 300 = September advance, 500 = October advance.)
+- Stage 10 – approve & lock (accountant sends → finance manager approves or sends back).
 - Approved months can't be unlocked. To start the demo again, make a fresh demo database (see Useful commands).
-- **Next action:** push Stage 10 to Git, then start **Stage 11 – Distribution**.
 
 ## Next (in order)
 11. **Distribution:** one click sends 50 station emails (Outbox page in demo); SAB-style bank Excel file with column mapping; station cash plan
