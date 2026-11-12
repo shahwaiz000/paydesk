@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5174"
     gemini_api_key: str = ""                           # put it in backend/.env - never in code
     gemini_model: str = ""                              # empty = pick the newest flash model automatically
+    # Stage 11: n8n webhook that sends ONE real copy of a station email to your own Gmail (demo)
+    n8n_webhook_url: str = ""          # e.g. http://localhost:5678/webhook/paydesk-station-email
 
 
 settings = Settings()

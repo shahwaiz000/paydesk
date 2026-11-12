@@ -477,3 +477,41 @@ def test_station_emails(client):
     # Sending twice is blocked
     res = client.post("/api/months/1/outbox/send", headers=acc)
     assert res.status_code == 400 and "already" in res.json()["detail"]
+
+
+def test_real_copy_goes_to_n8n(client, monkeypatch):
+    acc = login(client, "accountant", "demo123")
+    mgr = login(client, "manager", "demo123")
+    from app.config import settings
+    from app.routers import distribution
+
+    email_id = client.get("/api/months/1/outbox", headers=acc).json()["emails"][0]["id"]
+    url = f"/api/months/1/outbox/{email_id}/real-copy"
+
+    # Not connected yet -> clear message
+    monkeypatch.setattr(settings, "n8n_webhook_url", "")
+    res = client.post(url, headers=acc)
+    assert res.status_code == 400 and "N8N_WEBHOOK_URL" in res.json()["detail"]
+
+    sent = []
+
+    class FakeResponse:
+        status_code = 200
+
+    def fake_post(u, json, timeout):
+        sent.append(json)
+        return FakeResponse()
+
+    monkeypatch.setattr(settings, "n8n_webhook_url", "http://n8n.test/webhook/paydesk-station-email")
+    monkeypatch.setattr(distribution.httpx, "post", fake_post)
+    assert client.post(url, headers=mgr).status_code == 403            # accountant only
+    res = client.post(url, headers=acc)
+    assert res.status_code == 200, res.text
+    assert res.json()["real_copies"] == 1
+    assert len(sent) == 1 and sent[0]["station_code"] == "JED-01"
+    import base64
+    assert base64.b64decode(sent[0]["attachment_base64"])[:2] == b"PK"
+
+    # Daily limit
+    monkeypatch.setattr(distribution, "MAX_REAL_COPIES_PER_DAY", 1)
+    assert client.post(url, headers=acc).status_code == 429

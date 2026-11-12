@@ -310,6 +310,8 @@ class OutboxEmail(Base):
     bank_drivers: Mapped[int] = mapped_column(Integer)
     bank_total: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20), default="demo")   # demo = saved, not really sent
+    real_copies: Mapped[int] = mapped_column(Integer, default=0)       # real copies sent to your Gmail via n8n
+    real_copy_at: Mapped[datetime | None] = mapped_column(DateTime)
     sent_by: Mapped[str] = mapped_column(String(50))
     sent_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

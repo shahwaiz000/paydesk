@@ -75,3 +75,23 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   return res.json() as Promise<T>;
 }
+
+// Download a file (Excel etc.) that needs the login token.
+export async function downloadFile(path: string, filename: string) {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(API_URL + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new ApiError(0, "Can't reach the PayDesk server. Is Window 3 (backend) running?");
+  }
+  if (!res.ok) throw new ApiError(res.status, "Download failed");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

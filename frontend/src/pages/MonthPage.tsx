@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import ApprovalCard from "../components/ApprovalCard";
+import DistributionCard from "../components/DistributionCard";
 import FinesCard from "../components/FinesCard";
 import SalaryResults from "../components/SalaryResults";
 import UploadCard from "../components/UploadCard";
@@ -112,6 +113,8 @@ export default function MonthPage() {
           }}
         />
       )}
+
+      {month.status === "approved" && <DistributionCard monthId={month.id} refreshKey={refreshKey} />}
 
       {hasSalaries && <SalaryResults monthId={month.id} refreshKey={refreshKey} />}
 

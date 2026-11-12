@@ -9,18 +9,24 @@ makes one email per station:
 
 Demo mode: nothing really leaves PayDesk. The emails are saved in the Outbox, where you can
 open each one and download its Excel file - exactly what the cashier would receive.
+
+"Send a real copy": ONE email at a time goes to n8n (webhook). n8n adds an Arabic version with
+Gemini and sends it with Gmail to YOUR inbox - never to a station. The address is set in n8n only.
 """
 
+import base64
 import io
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+import httpx
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from ..config import settings
 from ..database import get_db
 from ..deps import require_roles
 from ..models import ACCOUNTANT, FINANCE_MANAGER, OutboxEmail, PayrollMonth, Salary, Station, User
@@ -154,6 +160,7 @@ def email_row(e: OutboxEmail, with_body: bool = False) -> dict:
         "cash_drivers": e.cash_drivers, "cash_total": e.cash_total,
         "bank_drivers": e.bank_drivers, "bank_total": e.bank_total,
         "status": e.status, "sent_by": e.sent_by, "sent_at": _iso(e.sent_at),
+        "real_copies": e.real_copies or 0, "real_copy_at": _iso(e.real_copy_at),
     }
     if with_body:
         data["body"] = e.body
@@ -174,6 +181,7 @@ def outbox_out(db: Session, month: PayrollMonth) -> dict:
         "cash_total": money(sum(e.cash_total for e in emails)),
         "bank_total": money(sum(e.bank_total for e in emails)),
         "emails": [email_row(e) for e in emails],
+        "n8n_ready": bool(settings.n8n_webhook_url),
     }
 
 
@@ -240,3 +248,49 @@ def download_attachment(month_id: int, email_id: int, db: Session = Depends(get_
     e = _get_email(db, get_month(db, month_id), email_id)
     return StreamingResponse(io.BytesIO(e.attachment), media_type=XLSX,
                              headers={"Content-Disposition": f'attachment; filename="{e.attachment_name}"'})
+
+
+MAX_REAL_COPIES_PER_DAY = 10      # safety: nobody can flood your inbox by clicking many times
+
+
+@router.post("/{email_id}/real-copy")
+def send_real_copy(month_id: int, email_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(require_roles(ACCOUNTANT))):
+    """Send ONE station email to n8n, which emails a real copy to your own Gmail."""
+    month = get_month(db, month_id)
+    e = _get_email(db, month, email_id)
+    if not settings.n8n_webhook_url:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "n8n is not connected. Add N8N_WEBHOOK_URL=... to backend\\.env and restart Window 3")
+    today = _now().replace(hour=0, minute=0, second=0, microsecond=0)
+    sent_today = db.scalar(select(func.sum(OutboxEmail.real_copies))
+                           .where(OutboxEmail.real_copy_at >= today)) or 0
+    if sent_today >= MAX_REAL_COPIES_PER_DAY:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            f"Limit reached: {MAX_REAL_COPIES_PER_DAY} real copies per day")
+
+    payload = {
+        "source": "PayDesk", "period": month.period, "month_name": month_name(month.period),
+        "station_code": e.station.code, "station": e.station.name,
+        "station_email": e.to_address,             # shown in the email only - n8n sends to YOUR address
+        "subject": e.subject, "body": e.body,
+        "drivers": e.drivers, "cash_drivers": e.cash_drivers, "cash_total": e.cash_total,
+        "bank_drivers": e.bank_drivers, "bank_total": e.bank_total,
+        "attachment_name": e.attachment_name,
+        "attachment_base64": base64.b64encode(e.attachment).decode(),
+        "sent_by": user.username,
+    }
+    try:
+        res = httpx.post(settings.n8n_webhook_url, json=payload, timeout=90)
+    except httpx.HTTPError:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            "Can't reach n8n. Is n8n running (npx n8n@2.45.7) and the workflow published?")
+    if res.status_code >= 400:
+        hint = " (workflow not published/active?)" if res.status_code == 404 else ""
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"n8n answered with error {res.status_code}{hint}")
+
+    e.real_copies = (e.real_copies or 0) + 1
+    e.real_copy_at = _now()
+    db.commit()
+    print(f"[outbox] real copy of {e.station.code} sent to n8n")
+    return email_row(e, with_body=True)

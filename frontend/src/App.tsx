@@ -8,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import MonthPage from "./pages/MonthPage";
 import MonthsPage from "./pages/MonthsPage";
 import MyPayslipPage from "./pages/MyPayslipPage";
+import OutboxPage from "./pages/OutboxPage";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/months" element={<MonthsPage />} />
         <Route path="/months/:id" element={<MonthPage />} />
+        <Route path="/months/:id/outbox" element={<OutboxPage />} />
         <Route path="/drivers" element={<DriversPage />} />
         <Route path="/drivers/:id" element={<DriverPage />} />
         <Route path="/disputes" element={<DisputesPage />} />

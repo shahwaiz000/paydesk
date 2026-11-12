@@ -208,3 +208,39 @@ export function lineReason(l: PayslipLine): string {
   if (l.carried_from) bits.unshift(`carried from ${monthLabel(l.carried_from)}`);
   return bits.join(" · ");
 }
+
+// ------------------------------------------------------------------ Distribution (Stage 11)
+
+export interface OutboxEmail {
+  id: number;
+  station_code: string;
+  station: string;
+  to: string;
+  subject: string;
+  attachment_name: string;
+  drivers: number;
+  cash_drivers: number;
+  cash_total: number;
+  bank_drivers: number;
+  bank_total: number;
+  status: string;
+  sent_by: string;
+  sent_at: string | null;
+  real_copies: number;
+  real_copy_at: string | null;
+  body?: string;
+}
+
+export interface Outbox {
+  period: string;
+  month_status: string;
+  can_send: boolean;
+  stations: number;
+  sent: number;
+  sent_at: string | null;
+  sent_by: string | null;
+  cash_total: number;
+  bank_total: number;
+  emails: OutboxEmail[];
+  n8n_ready: boolean;
+}
