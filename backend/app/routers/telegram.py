@@ -309,8 +309,24 @@ def _wrong_menu(db: Session, link: TelegramLink) -> dict:
 
 
 def _button(db: Session, link: TelegramLink, data: str) -> dict:
-    """w:<month_id>:<n> = deduction n is wrong · o:<month_id> = other problem."""
+    """w:<month_id>:<n> = deduction n is wrong · o:<month_id> = other problem
+    cy:<payment_id> = "yes, I received my cash" · cn:<payment_id> = "no / wrong amount" (automation 3)."""
     parts = data.split(":")
+    if parts[0] in ("cy", "cn"):
+        from .payday import ASK_HOW_MUCH, confirm, own_payment
+        try:
+            pay = own_payment(db, link.driver_id, int(parts[1]))
+        except (IndexError, ValueError):
+            pay = None
+        if pay is None:                                       # not his payment
+            return _reply(link.chat_id, T["button_gone"])
+        if parts[0] == "cy":
+            return _reply(link.chat_id, confirm(db, pay))
+        if pay.answer:
+            return _reply(link.chat_id, confirm(db, pay))      # "you already answered"
+        link.pending_month_id, link.pending_topic, link.pending_line_key = pay.month_id, "cash", str(pay.id)
+        db.commit()
+        return _reply(link.chat_id, ASK_HOW_MUCH)
     try:
         kind, month_id = parts[0], int(parts[1])
         index = int(parts[2]) if kind == "w" else None
@@ -335,6 +351,10 @@ def _save_reason(db: Session, link: TelegramLink, text: str) -> dict:
     month_id, topic, line_key = link.pending_month_id, link.pending_topic, link.pending_line_key
     link.pending_month_id = link.pending_topic = link.pending_line_key = None
     db.commit()
+    if topic == "cash":                                       # automation 3: "I got a different amount"
+        from .payday import own_payment, report_wrong
+        pay = own_payment(db, link.driver_id, int(line_key or 0))
+        return _reply(link.chat_id, report_wrong(db, pay, text) if pay else T["button_gone"])
     found = _own_month(db, link.driver_id, month_id)
     if not found:
         return _reply(link.chat_id, T["button_gone"])

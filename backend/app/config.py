@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     n8n_salary_messages_url: str = ""   # e.g. http://localhost:5678/webhook/paydesk-salary-messages
     # Token of the Telegram bot (from @BotFather). Only here - never in code, n8n files or Git.
     telegram_bot_token: str = ""
+    # Automation 3: remind a driver once if he did not answer "did you receive your cash?"
+    cash_reminder_hours: float = 24
 
 
 settings = Settings()

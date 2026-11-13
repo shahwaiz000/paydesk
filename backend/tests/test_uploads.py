@@ -665,3 +665,89 @@ def test_automation_2_telegram_bot(client, monkeypatch):
     # Unlink -> nothing any more
     assert "no longer linked" in say("/unlink")["telegram"]["text"]
     assert say("/salary")["telegram"]["text"].startswith("🔒")
+
+
+def test_automation_3_cash_received(client, monkeypatch):
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.models import CashPayment
+
+    monkeypatch.setattr(settings, "automation_key", "test-key-123")
+    monkeypatch.setattr(settings, "demo_inbox", "demo.inbox@gmail.com")
+    key = {"X-PayDesk-Key": "test-key-123"}
+    acc = login(client, "accountant", "demo123")
+    ruh = login(client, "ruh-01", "demo123")
+    jed = login(client, "jed-01", "demo123")
+
+    def say(text=None, chat="888", callback=None):
+        return client.post("/api/automation/telegram/message", headers=key,
+                           json={"chat_id": chat, "text": text, "callback_data": callback}).json()
+
+    say("/link D2 1234")          # D2 = cash driver at RUH-01, net 1200
+
+    # Cashier sees only HIS station's cash drivers
+    page = client.get("/api/payday", headers=ruh).json()
+    assert page["month"]["period"] == "2026-10"
+    assert [d["driver_id"] for d in page["drivers"]] == ["D2"] and page["drivers"][0]["status"] == "not_paid"
+    assert page["drivers"][0]["telegram"] is True
+    # Can't mark another station's driver, accountant can't mark at all
+    assert client.post("/api/payday/1/paid", headers=ruh, json={"driver_ids": ["D3"]}).status_code == 400
+    assert client.post("/api/payday/1/paid", headers=acc, json={"driver_ids": ["D2"]}).status_code == 403
+
+    # Nothing to ask before payment
+    assert client.get("/api/automation/cash/to-ask", headers=key).json()["count"] == 0
+    assert client.post("/api/payday/1/paid", headers=ruh, json={"driver_ids": ["D2"]}).json()["marked"] == 1
+    assert client.post("/api/payday/1/paid", headers=ruh, json={"driver_ids": ["D2"]}).json()["marked"] == 0  # once
+
+    # n8n asks the driver on Telegram
+    ask = client.get("/api/automation/cash/to-ask", headers=key).json()
+    assert ask["count"] == 1
+    m = ask["messages"][0]
+    assert m["kind"] == "ask" and m["telegram"]["chat_id"] == "888" and "SAR 1,200" in m["telegram"]["text"]
+    pid = m["payment_id"]
+    client.post(f"/api/automation/cash/{pid}/asked", headers=key, json={"kind": "ask", "ok": True})
+    assert client.get("/api/automation/cash/to-ask", headers=key).json()["count"] == 0   # not twice
+    assert client.get("/api/payday", headers=ruh).json()["drivers"][0]["status"] == "waiting"
+
+    # Another chat can't answer for D2
+    assert say(callback=f"cy:{pid}", chat="999")["telegram"]["text"].startswith("🔒")
+
+    # 24 h later without an answer -> ONE reminder
+    with SessionLocal() as db:
+        p = db.get(CashPayment, pid)
+        p.asked_at = p.asked_at.replace(year=p.asked_at.year - 1)
+        db.commit()
+    rem = client.get("/api/automation/cash/to-ask", headers=key).json()["messages"]
+    assert rem[0]["kind"] == "reminder" and "Reminder" in rem[0]["telegram"]["text"]
+    client.post(f"/api/automation/cash/{pid}/asked", headers=key, json={"kind": "reminder", "ok": True})
+    assert client.get("/api/automation/cash/to-ask", headers=key).json()["count"] == 0
+
+    # ❌ wrong amount -> asks how much -> saved with the amount (Arabic digits work too)
+    assert "How much" in say(callback=f"cn:{pid}")["telegram"]["text"]
+    assert "payroll team" in say("استلمت ١٠٠٠ فقط")["telegram"]["text"]
+    page = client.get("/api/payday", headers=acc).json()
+    assert page["problems"][0]["driver_id"] == "D2" and page["problems"][0]["said_amount"] == 1000
+    assert page["totals"]["wrong"] == 1
+    # Can't change the answer afterwards
+    assert "already answered" in say(callback=f"cy:{pid}")["telegram"]["text"]
+
+    # Alert email to the accountant, once
+    al = client.get("/api/automation/cash/alerts", headers=key).json()
+    assert al["count"] == 1 and al["alerts"][0]["difference"] == 200 and al["notify_to"] == "demo.inbox@gmail.com"
+    client.post(f"/api/automation/cash/{pid}/alerted", headers=key)
+    assert client.get("/api/automation/cash/alerts", headers=key).json()["count"] == 0
+
+    # JED-01 pays D3 (not on Telegram) -> paid, but nobody to ask
+    assert client.post("/api/payday/1/paid", headers=jed, json={"driver_ids": ["D3"]}).json()["marked"] == 1
+    s = client.get("/api/automation/cash/summary", headers=key).json()
+    assert s["stations"] == 2 and s["stations_all_paid"] == 2 and s["totals"]["paid"] == 2
+    assert s["totals"]["wrong"] == 1 and s["totals"]["no_telegram"] == 1 and s["problems"][0]["driver_id"] == "D2"
+
+    # ✅ Yes path: D3 links later, gets asked, taps "Yes"
+    say("/link D3 1234", chat="777")
+    m = client.get("/api/automation/cash/to-ask", headers=key).json()["messages"][0]
+    assert m["driver_id"] == "D3"
+    r = say(callback=f"cy:{m['payment_id']}", chat="777")
+    assert "Thank you" in r["telegram"]["text"] and "785" in r["telegram"]["text"]
+    assert client.get("/api/payday", headers=jed).json()["drivers"][0]["status"] == "confirmed"
+    assert client.get("/api/automation/cash/to-ask", headers=key).json()["count"] == 0

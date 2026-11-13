@@ -378,3 +378,32 @@ class AutomationState(Base):
 
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[str] = mapped_column(String(200))
+
+
+# ------------------------------------------------------------------ Automation 3 (cash received?)
+
+class CashPayment(Base):
+    """A station cashier paid a cash driver. The driver confirms on Telegram (automation 3) -
+    this replaces the paper signature sheet."""
+
+    __tablename__ = "cash_payments"
+    __table_args__ = (UniqueConstraint("month_id", "driver_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month_id: Mapped[int] = mapped_column(ForeignKey("payroll_months.id"), index=True)
+    driver_id: Mapped[str] = mapped_column(ForeignKey("drivers.id"), index=True)
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id"), index=True)
+    amount: Mapped[float] = mapped_column(Float)                       # net salary paid in cash
+    paid_by: Mapped[str] = mapped_column(String(50))                   # cashier username
+    paid_at: Mapped[datetime] = mapped_column(DateTime)
+    asked_at: Mapped[datetime | None] = mapped_column(DateTime)        # Telegram question sent
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime)     # one reminder if no answer
+    answer: Mapped[str | None] = mapped_column(String(10))             # confirmed / wrong
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime)
+    said_amount: Mapped[float | None] = mapped_column(Float)           # "I only got 1000"
+    note: Mapped[str | None] = mapped_column(String(300))
+    alerted_at: Mapped[datetime | None] = mapped_column(DateTime)      # accountant emailed about "wrong"
+
+    driver: Mapped[Driver] = relationship()
+    station: Mapped[Station] = relationship()
+    month: Mapped[PayrollMonth] = relationship()
