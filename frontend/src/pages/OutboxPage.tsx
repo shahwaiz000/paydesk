@@ -1,16 +1,24 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, downloadFile } from "../api";
-import { useAuth } from "../auth";
 import { sar } from "../format";
 import { monthLabel, type Outbox, type OutboxEmail } from "../types";
 
-// Stage 11: every station email of one month. Click one to read it and download its Excel file.
+// Automation 1: every station email of one month and what n8n did with it.
+// Click one to read it and download its Excel file.
+const BADGE: Record<OutboxEmail["status"], string> = {
+  sent: "bg-emerald-100 text-emerald-800",
+  failed: "bg-red-100 text-red-700",
+  prepared: "bg-slate-100 text-slate-600",
+};
+const LABEL: Record<OutboxEmail["status"], string> = { sent: "✓ Sent", failed: "Failed", prepared: "Waiting" };
+
+function when(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
 export default function OutboxPage() {
   const { id } = useParams();
-  const { user } = useAuth();
-  const [sending, setSending] = useState(false);
-  const [notice, setNotice] = useState("");
   const [box, setBox] = useState<Outbox | null>(null);
   const [open, setOpen] = useState<OutboxEmail | null>(null);
   const [q, setQ] = useState("");
@@ -22,7 +30,6 @@ export default function OutboxPage() {
 
   async function show(e: OutboxEmail) {
     setError("");
-    setNotice("");
     try {
       setOpen(await api<OutboxEmail>(`/api/months/${id}/outbox/${e.id}`));
     } catch (err) {
@@ -35,23 +42,6 @@ export default function OutboxPage() {
       await downloadFile(`/api/months/${id}/outbox/${e.id}/attachment`, e.attachment_name);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Download failed");
-    }
-  }
-
-  // ONE real email to your own Gmail, through n8n (n8n adds Arabic with Gemini and sends with Gmail)
-  async function realCopy(e: OutboxEmail) {
-    setSending(true);
-    setError("");
-    setNotice("");
-    try {
-      const updated = await api<OutboxEmail>(`/api/months/${id}/outbox/${e.id}/real-copy`, { method: "POST" });
-      setOpen(updated);
-      setBox((b) => (b ? { ...b, emails: b.emails.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)) } : b));
-      setNotice("✓ Sent to n8n. Check your Gmail in a few seconds.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sending failed");
-    } finally {
-      setSending(false);
     }
   }
 
@@ -70,9 +60,14 @@ export default function OutboxPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Outbox · {monthLabel(box.period)}</h1>
           <p className="mt-1 text-slate-500">
-            {box.sent} station emails · cash SAR {sar(box.cash_total)} · bank SAR {sar(box.bank_total)}
+            {box.delivered} of {box.prepared} sent by n8n
+            {box.failed > 0 ? ` · ${box.failed} failed` : ""}
+            {box.run.seconds != null ? ` · ${box.run.seconds} s` : ""} · cash SAR {sar(box.cash_total)} · bank SAR{" "}
+            {sar(box.bank_total)}
           </p>
-          <p className="mt-1 text-xs text-amber-700">Demo mode: these emails were saved here, not really sent.</p>
+          <p className="mt-1 text-xs text-amber-700">
+            Demo: n8n sends every email to {box.demo_inbox ?? "your demo inbox"} – the station address is only shown inside.
+          </p>
         </div>
         <input
           value={q}
@@ -84,8 +79,8 @@ export default function OutboxPage() {
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
-      {box.sent === 0 ? (
-        <p className="mt-8 text-slate-500">No emails yet. Send them from the month page after approval.</p>
+      {box.prepared === 0 ? (
+        <p className="mt-8 text-slate-500">No emails yet. They are prepared automatically when the month is approved.</p>
       ) : (
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.2fr]">
           {/* List */}
@@ -103,7 +98,8 @@ export default function OutboxPage() {
                     </div>
                     <div className="mt-0.5 flex justify-between text-xs text-slate-500">
                       <span>{e.to}</span>
-                      <span>{e.cash_drivers} cash · {e.bank_drivers} bank{e.real_copies > 0 ? " · 📧" : ""}</span>
+                      <span>{e.cash_drivers} cash · {e.bank_drivers} bank</span>
+                      <span className={`rounded-full px-2 py-0.5 font-medium ${BADGE[e.status]}`}>{LABEL[e.status]}</span>
                     </div>
                   </button>
                 </li>
@@ -126,23 +122,16 @@ export default function OutboxPage() {
                 >
                   📎 {open.attachment_name}
                 </button>
-                {user?.role === "accountant" && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => realCopy(open)}
-                      disabled={sending || !box.n8n_ready}
-                      title={box.n8n_ready ? "" : "Add N8N_WEBHOOK_URL to backend\\.env first"}
-                      className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      {sending ? "Sending via n8n…" : "📧 Send a real copy to my Gmail"}
-                    </button>
-                    {open.real_copies > 0 && (
-                      <span className="text-xs text-slate-500">Sent {open.real_copies}× via n8n</span>
-                    )}
-                    {!box.n8n_ready && <span className="text-xs text-amber-700">n8n not connected yet</span>}
-                  </div>
-                )}
-                {notice && <p className="mt-2 text-sm text-emerald-700">{notice}</p>}
+                <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE[open.status]}`}>{LABEL[open.status]}</span>
+                  {open.status === "sent" && (
+                    <span className="ml-2 text-slate-600">
+                      n8n sent it to {open.delivered_to} · {when(open.delivered_at)}
+                    </span>
+                  )}
+                  {open.status === "failed" && <span className="ml-2 text-red-700">{open.delivery_note}</span>}
+                  {open.status === "prepared" && <span className="ml-2 text-slate-500">Waiting for n8n</span>}
+                </div>
                 <pre className="mt-4 overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 font-mono text-xs leading-relaxed text-slate-700">
                   {open.body}
                 </pre>

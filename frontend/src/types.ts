@@ -223,24 +223,39 @@ export interface OutboxEmail {
   cash_total: number;
   bank_drivers: number;
   bank_total: number;
-  status: string;
-  sent_by: string;
-  sent_at: string | null;
-  real_copies: number;
-  real_copy_at: string | null;
+  status: "prepared" | "sent" | "failed";
+  prepared_at: string | null;
+  delivered_to: string | null;
+  delivered_at: string | null;
+  gmail_id: string | null;
+  delivery_note: string | null;
   body?: string;
+}
+
+// Automation 1: n8n sends the station emails after approval
+export interface EmailRun {
+  status: "running" | "done" | "failed" | "not_connected" | null;
+  by: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  seconds: number | null;
+  note: string | null;
 }
 
 export interface Outbox {
   period: string;
   month_status: string;
-  can_send: boolean;
   stations: number;
-  sent: number;
-  sent_at: string | null;
-  sent_by: string | null;
+  prepared: number;
+  delivered: number;
+  failed: number;
+  waiting: number;
   cash_total: number;
   bank_total: number;
-  emails: OutboxEmail[];
+  run: EmailRun;
+  can_run: boolean;
   n8n_ready: boolean;
+  missing_setup: string[];
+  demo_inbox: string | null;
+  emails: OutboxEmail[];
 }

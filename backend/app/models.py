@@ -86,6 +86,13 @@ class PayrollMonth(Base):
     approved_by: Mapped[str | None] = mapped_column(String(50))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime)
     returned_note: Mapped[str | None] = mapped_column(String(400))   # why the manager sent it back
+    # Automation 1: n8n sends the station emails after approval
+    # None -> running -> done / failed;  not_connected = n8n webhook not set in .env
+    emails_run_status: Mapped[str | None] = mapped_column(String(20))
+    emails_run_by: Mapped[str | None] = mapped_column(String(50))
+    emails_run_started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    emails_run_finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    emails_run_note: Mapped[str | None] = mapped_column(String(400))
 
     uploads: Mapped[list["FileUpload"]] = relationship(
         back_populates="month", cascade="all, delete-orphan", order_by="FileUpload.id"
@@ -290,8 +297,8 @@ class MonthEvent(Base):
 class OutboxEmail(Base):
     """One salary email to one station (after the month is approved).
 
-    Demo mode: emails are NOT really sent. They are saved here and shown on the Outbox page,
-    with the Excel attachment the station cashier would get. Only ever added to.
+    PayDesk prepares the email + Excel here when the month is approved. n8n (automation 1) then
+    sends it with Gmail - to the demo inbox, never to the real station - and reports back.
     """
 
     __tablename__ = "outbox_emails"
@@ -309,9 +316,15 @@ class OutboxEmail(Base):
     cash_total: Mapped[float] = mapped_column(Float)
     bank_drivers: Mapped[int] = mapped_column(Integer)
     bank_total: Mapped[float] = mapped_column(Float)
-    status: Mapped[str] = mapped_column(String(20), default="demo")   # demo = saved, not really sent
-    real_copies: Mapped[int] = mapped_column(Integer, default=0)       # real copies sent to your Gmail via n8n
+    # prepared = waiting for n8n · sent = n8n sent it with Gmail · failed = n8n could not send it
+    # (old rows may say "demo" - treated like "prepared")
+    status: Mapped[str] = mapped_column(String(20), default="prepared")
+    real_copies: Mapped[int] = mapped_column(Integer, default=0)       # old Stage 11 button (not used any more)
     real_copy_at: Mapped[datetime | None] = mapped_column(DateTime)
+    delivered_to: Mapped[str | None] = mapped_column(String(120))      # the demo inbox n8n really sent it to
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime)
+    gmail_id: Mapped[str | None] = mapped_column(String(80))
+    delivery_note: Mapped[str | None] = mapped_column(String(400))     # error text when it failed
     sent_by: Mapped[str] = mapped_column(String(50))
     sent_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

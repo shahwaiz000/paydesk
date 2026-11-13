@@ -10,7 +10,7 @@ While a month is "submitted" or "approved" nobody can change its files, fines or
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from ..models import (
     ACCOUNTANT, FINANCE_MANAGER, Dispute, MonthEvent, PayrollMonth, Salary, User,
 )
 from ..payroll.engine import money, previous_period
+from .distribution import begin_run, call_n8n, prepare_station_emails
 from .months import get_month
 
 router = APIRouter(prefix="/api/months/{month_id}", tags=["approval"])
@@ -142,7 +143,8 @@ def submit(month_id: int, body: SubmitIn, db: Session = Depends(get_db),
 
 
 @router.post("/approve")
-def approve(month_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles(FINANCE_MANAGER))):
+def approve(month_id: int, tasks: BackgroundTasks, db: Session = Depends(get_db),
+            user: User = Depends(require_roles(FINANCE_MANAGER))):
     month = get_month(db, month_id)
     if month.status != "submitted":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The accountant must send this month for approval first")
@@ -152,6 +154,10 @@ def approve(month_id: int, db: Session = Depends(get_db), user: User = Depends(r
     month.status = "approved"
     month.approved_by, month.approved_at = user.username, _now()
     _log(db, month, "approved", user)
+    # Automation 1: prepare the station emails and start n8n (in the background - approving stays fast)
+    prepare_station_emails(db, month, user.username)
+    if begin_run(db, month, user.username):
+        tasks.add_task(call_n8n, month.id)
     db.commit()
     return approval_out(db, month)
 

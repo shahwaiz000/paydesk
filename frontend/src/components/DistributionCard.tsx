@@ -10,11 +10,11 @@ function when(iso: string | null): string {
   return new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-// Stage 11: after approval, one click sends the salary email to every station (demo: saved in the Outbox).
+// Automation 1: when the month is approved, n8n sends the salary email to every station by itself.
+// This card only shows what n8n is doing (refreshes every 3 seconds while it runs).
 export default function DistributionCard({ monthId, refreshKey }: { monthId: number; refreshKey: number }) {
   const { user } = useAuth();
   const [box, setBox] = useState<Outbox | null>(null);
-  const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,79 +23,91 @@ export default function DistributionCard({ monthId, refreshKey }: { monthId: num
   }, [monthId]);
   useEffect(load, [load, refreshKey]);
 
-  async function send() {
+  const running = box?.run.status === "running";
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [running, load]);
+
+  async function runAgain() {
     setBusy(true);
     setError("");
     try {
-      setBox(await api<Outbox>(`/api/months/${monthId}/outbox/send`, { method: "POST" }));
-      setConfirm(false);
+      setBox(await api<Outbox>(`/api/months/${monthId}/outbox/run`, { method: "POST" }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Sending failed");
+      setError(e instanceof Error ? e.message : "Could not start the automation");
     } finally {
       setBusy(false);
     }
   }
 
   if (!box) return error ? <p className="mt-6 text-red-600">{error}</p> : null;
-  const sent = box.sent > 0;
+  const { run } = box;
+  const total = box.prepared || box.stations;
+  const pct = total ? Math.round((box.delivered / total) * 100) : 0;
+  const done = run.status === "done";
+
+  const headline =
+    run.status === "running"
+      ? `n8n is sending… ${box.delivered} of ${total} stations`
+      : done
+        ? `✓ ${box.delivered} of ${total} station emails sent by n8n${run.seconds != null ? ` in ${run.seconds} s` : ""}`
+        : run.status === "failed"
+          ? `${box.delivered} of ${total} sent – the automation stopped`
+          : run.status === "not_connected"
+            ? "n8n is not connected yet – emails are prepared and waiting"
+            : `${total} station emails prepared`;
 
   return (
-    <div className={`mt-6 rounded-2xl border p-5 shadow-sm ${sent ? "border-emerald-200 bg-emerald-50/40" : "border-indigo-200 bg-white"}`}>
+    <div className={`mt-6 rounded-2xl border p-5 shadow-sm ${done ? "border-emerald-200 bg-emerald-50/40" : "border-indigo-200 bg-white"}`}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-800">📤 Send salaries to stations</h2>
-          <p className="text-sm text-slate-500">
-            {sent
-              ? `${box.sent} station emails sent by ${box.sent_by} · ${when(box.sent_at)}`
-              : `One email per station (${box.stations} stations): cash to prepare, list of cash drivers, and an Excel sheet to sign.`}
-          </p>
-          <p className="mt-1 text-xs text-amber-700">Demo mode: emails are saved in the Outbox, not really sent.</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">🤖 Automation 1 · n8n + Gemini + Gmail</p>
+          <h2 className="text-lg font-bold text-slate-800">Station salary emails</h2>
+          <p className="text-sm text-slate-600">{headline}</p>
+          {run.started_at && (
+            <p className="text-xs text-slate-500">
+              Started {when(run.started_at)} after approval by {run.by}
+            </p>
+          )}
+          {run.note && <p className="mt-1 text-sm text-amber-700">{run.note}</p>}
+          {box.demo_inbox && (
+            <p className="mt-1 text-xs text-amber-700">Demo: every email goes to {box.demo_inbox}, never to a station.</p>
+          )}
         </div>
-        {sent && (
-          <div className="text-right">
-            <p className="text-xs text-slate-500">Cash at stations</p>
-            <p className="text-xl font-bold text-slate-800">SAR {sar(box.cash_total)}</p>
-            <p className="text-xs text-slate-500">Bank {sar(box.bank_total)}</p>
-          </div>
-        )}
+        <div className="text-right">
+          <p className="text-xs text-slate-500">Cash at stations</p>
+          <p className="text-xl font-bold text-slate-800">SAR {sar(box.cash_total)}</p>
+          <p className="text-xs text-slate-500">Bank {sar(box.bank_total)}</p>
+        </div>
       </div>
+
+      {total > 0 && (
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div className={`h-full ${done ? "bg-emerald-500" : "bg-indigo-500"} transition-all`} style={{ width: `${pct}%` }} />
+        </div>
+      )}
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {user?.role === "accountant" && box.can_send && !confirm && (
+        {user?.role === "accountant" && box.can_run && (
           <button
-            onClick={() => setConfirm(true)}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            onClick={runAgain}
+            disabled={busy}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            Send {box.stations} station emails
+            {busy ? "Starting…" : run.status ? `Run again (${box.waiting} not sent)` : "Start automation"}
           </button>
         )}
-        {confirm && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-indigo-50 p-2 text-sm text-indigo-900">
-            <span>Send the salary email to all {box.stations} stations now?</span>
-            <button
-              onClick={send}
-              disabled={busy}
-              className="rounded-lg bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {busy ? "Sending…" : "Yes, send"}
-            </button>
-            <button onClick={() => setConfirm(false)} className="rounded-lg border border-indigo-300 px-3 py-1.5">
-              Cancel
-            </button>
-          </div>
-        )}
-        {sent && (
+        {box.prepared > 0 && (
           <Link
             to={`/months/${monthId}/outbox`}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             Open Outbox →
           </Link>
-        )}
-        {!sent && user?.role === "finance_manager" && (
-          <p className="text-sm text-slate-500">Waiting for the accountant to send the station emails.</p>
         )}
       </div>
     </div>

@@ -434,31 +434,28 @@ def test_previous_month_must_be_approved_first(client):
     assert any(c["key"] == "previous" and not c["ok"] for c in checks)
 
 
-# ------------------------------------------------------------------ Stage 11: station emails (Outbox)
+# ------------------------------------------------------------------ Stage 11 + Automation 1: station emails
 
-def test_station_emails(client):
+def test_station_emails_prepared_on_approval(client):
     acc = login(client, "accountant", "demo123")
     mgr = login(client, "manager", "demo123")
     cashier = login(client, "ruh-01", "demo123")
 
-    # Month 2026-11 is only calculated -> can't send yet
+    # Month 2026-11 is only calculated -> nothing to send yet
     months = {m["period"]: m["id"] for m in client.get("/api/months", headers=acc).json()}
-    res = client.post(f"/api/months/{months['2026-11']}/outbox/send", headers=acc)
+    res = client.post(f"/api/months/{months['2026-11']}/outbox/run", headers=acc)
     assert res.status_code == 400 and "approve" in res.json()["detail"]
 
-    # October is approved (test above): only the accountant can send, and only once
+    # October was approved (test above) -> the emails were prepared automatically.
+    # n8n is not set up in tests -> "not_connected", with the missing .env lines named
     assert client.get("/api/months/1/outbox", headers=cashier).status_code == 403
-    assert client.post("/api/months/1/outbox/send", headers=mgr).status_code == 403
-    before = client.get("/api/months/1/outbox", headers=acc).json()
-    assert before["can_send"] is True and before["sent"] == 0 and before["stations"] == 2
-
-    res = client.post("/api/months/1/outbox/send", headers=acc)
-    assert res.status_code == 200, res.text
-    box = res.json()
-    assert box["sent"] == 2 and box["can_send"] is False
+    box = client.get("/api/months/1/outbox", headers=acc).json()
+    assert box["prepared"] == 2 and box["delivered"] == 0 and box["waiting"] == 2
+    assert box["run"]["status"] == "not_connected" and "N8N_MONTH_APPROVED_URL" in box["run"]["note"]
+    assert box["can_run"] is True and box["n8n_ready"] is False
     assert [e["station_code"] for e in box["emails"]] == ["JED-01", "RUH-01"]
     ruh = box["emails"][1]
-    assert ruh["to"] == "ruh-01@stations.paydesk.demo"
+    assert ruh["to"] == "ruh-01@stations.paydesk.demo" and ruh["status"] == "prepared"
     assert ruh["drivers"] == 2 and ruh["cash_drivers"] == 1 and ruh["bank_drivers"] == 1
 
     # Totals match the approved month
@@ -474,44 +471,83 @@ def test_station_emails(client):
     sheet = pd.read_excel(io.BytesIO(xl.content), header=None)
     assert "D2" in sheet.astype(str).values and "D1" in sheet.astype(str).values
 
-    # Sending twice is blocked
-    res = client.post("/api/months/1/outbox/send", headers=acc)
-    assert res.status_code == 400 and "already" in res.json()["detail"]
 
-
-def test_real_copy_goes_to_n8n(client, monkeypatch):
+def test_automation_1_with_n8n(client, monkeypatch):
     acc = login(client, "accountant", "demo123")
     mgr = login(client, "manager", "demo123")
     from app.config import settings
     from app.routers import distribution
 
-    email_id = client.get("/api/months/1/outbox", headers=acc).json()["emails"][0]["id"]
-    url = f"/api/months/1/outbox/{email_id}/real-copy"
-
-    # Not connected yet -> clear message
-    monkeypatch.setattr(settings, "n8n_webhook_url", "")
-    res = client.post(url, headers=acc)
-    assert res.status_code == 400 and "N8N_WEBHOOK_URL" in res.json()["detail"]
-
-    sent = []
+    called = []
 
     class FakeResponse:
         status_code = 200
 
-    def fake_post(u, json, timeout):
-        sent.append(json)
+    def fake_post(url, json, timeout):
+        called.append((url, json))
         return FakeResponse()
 
-    monkeypatch.setattr(settings, "n8n_webhook_url", "http://n8n.test/webhook/paydesk-station-email")
+    monkeypatch.setattr(settings, "n8n_month_approved_url", "http://n8n.test/webhook/paydesk-month-approved")
+    monkeypatch.setattr(settings, "automation_key", "test-key-123")
+    monkeypatch.setattr(settings, "demo_inbox", "demo.inbox@gmail.com")
     monkeypatch.setattr(distribution.httpx, "post", fake_post)
-    assert client.post(url, headers=mgr).status_code == 403            # accountant only
-    res = client.post(url, headers=acc)
-    assert res.status_code == 200, res.text
-    assert res.json()["real_copies"] == 1
-    assert len(sent) == 1 and sent[0]["station_code"] == "JED-01"
-    import base64
-    assert base64.b64decode(sent[0]["attachment_base64"])[:2] == b"PK"
 
-    # Daily limit
-    monkeypatch.setattr(distribution, "MAX_REAL_COPIES_PER_DAY", 1)
-    assert client.post(url, headers=acc).status_code == 429
+    # Accountant starts it again (it was "not connected") -> n8n webhook called with the month
+    assert client.post("/api/months/1/outbox/run", headers=mgr).status_code == 403
+    res = client.post("/api/months/1/outbox/run", headers=acc)
+    assert res.status_code == 200, res.text
+    assert len(called) == 1 and called[0][1]["month_id"] == 1 and called[0][1]["stations_to_send"] == 2
+    box = client.get("/api/months/1/outbox", headers=acc).json()
+    assert box["run"]["status"] == "running" and box["can_run"] is False
+    assert client.post("/api/months/1/outbox/run", headers=acc).status_code == 400    # already running
+
+    # The automation API needs the key
+    assert client.get("/api/automation/months/1/station-emails").status_code == 401
+    assert client.get("/api/automation/months/1/station-emails",
+                      headers={"X-PayDesk-Key": "wrong"}).status_code == 401
+    key = {"X-PayDesk-Key": "test-key-123"}
+
+    data = client.get("/api/automation/months/1/station-emails", headers=key).json()
+    assert data["count"] == 2 and data["send_to"] == "demo.inbox@gmail.com"
+    jed, ruh = data["stations"]
+    assert ruh["send_to"] == "demo.inbox@gmail.com" and ruh["cashier_email"] == "ruh-01@stations.paydesk.demo"
+    assert [d["driver_id"] for d in ruh["cash_list"]] == ["D2"]          # bank driver D1 not in the cash list
+    xl = client.get(f"/api/automation/outbox/{ruh['email_id']}/attachment", headers=key)
+    assert xl.status_code == 200 and xl.content[:2] == b"PK"
+
+    # n8n reports: JED sent, RUH failed
+    r = client.post(f"/api/automation/outbox/{jed['email_id']}/result", headers=key,
+                    json={"status": "sent", "gmail_id": "abc123"})
+    assert r.json()["status"] == "sent"
+    client.post(f"/api/automation/outbox/{ruh['email_id']}/result", headers=key,
+                json={"status": "failed", "note": "Gmail quota"})
+    fin = client.post("/api/automation/months/1/run-finished", headers=key).json()
+    assert fin["sent"] == 1 and fin["failed"] == 1 and fin["status"] == "failed"
+    assert fin["notify_to"] == "demo.inbox@gmail.com" and fin["seconds"] is not None
+
+    # A "sent" email can never go back to failed
+    r = client.post(f"/api/automation/outbox/{jed['email_id']}/result", headers=key, json={"status": "failed"})
+    assert r.json()["status"] == "sent"
+
+    # Run again -> n8n only gets the failed one (no station gets the same email twice)
+    assert client.post("/api/months/1/outbox/run", headers=acc).status_code == 200
+    data = client.get("/api/automation/months/1/station-emails", headers=key).json()
+    assert [s["station_code"] for s in data["stations"]] == ["RUH-01"]
+    client.post(f"/api/automation/outbox/{ruh['email_id']}/result", headers=key, json={"status": "sent"})
+    fin = client.post("/api/automation/months/1/run-finished", headers=key).json()
+    assert fin["sent"] == 2 and fin["status"] == "done"
+    box = client.get("/api/months/1/outbox", headers=acc).json()
+    assert box["delivered"] == 2 and box["can_run"] is False
+    assert box["emails"][0]["delivered_to"] == "demo.inbox@gmail.com" and box["emails"][0]["gmail_id"] == "abc123"
+
+    # n8n down -> the run shows a clear message
+    def down(url, json, timeout):
+        raise distribution.httpx.ConnectError("no")
+
+    monkeypatch.setattr(distribution.httpx, "post", down)
+    from app.database import SessionLocal
+    from app.models import PayrollMonth
+    distribution.call_n8n(1)
+    with SessionLocal() as db:
+        m = db.get(PayrollMonth, 1)
+        assert m.emails_run_status == "failed" and "Can't reach n8n" in m.emails_run_note

@@ -64,27 +64,44 @@
   - Excel attachment per station: all drivers, net, "Paid on" + "Driver signature" columns for cash drivers
   - Outbox page (`/months/<id>/outbox`): list of stations, read each email, download its Excel
   - demo mode: emails are saved in the Outbox, not really sent
-  - "📧 Send a real copy to my Gmail" (Outbox, accountant): sends ONE station email to an **n8n webhook**;
-    n8n adds an Arabic version with Gemini and sends it with Gmail to Shahwaiz's own inbox (never to a station).
-    Max 10 real copies a day. Needs `N8N_WEBHOOK_URL=...` in `backend\.env`.
+  - (the old "Send a real copy" button was replaced by automation 1 on 12 Nov)
 - **Fixes:**
   - new columns are added to the database automatically on startup
   - the demo database (`paydesk-demo.db`) is now the default
 - **Tests:** 25 passing (`pytest`)
+- **Automation 1 – station emails (n8n + Gemini + Gmail):** built 12 Nov, see "Where we stopped"
 
-## Where we stopped (12 Nov 2026)
-- Stages 8, 9, 10 and Stage 11 part 1 (station emails + Outbox + "real copy" button) are built and tested (25 tests passing).
-- **12 Nov:** direction changed to automation-first – see "DIRECTION" and "The 12 automations" below.
-- **Next action:** agree the design of automation 1 (station emails), then build it.
-  n8n runs locally: `npx n8n@2.45.7` → http://localhost:5678.
-- Push to GitHub if not done yet:
-  `git add .` → `git commit -m "Stage 11 part 1: station salary emails and Outbox"` → `git push`
+## Where we stopped (13 Nov 2026)
+- **Automation 1 works end to end** (tested 13 Nov with October 2026): Approve → PayDesk → n8n → Gemini Arabic →
+  50 Gmail emails with Excel → Google Sheet log → PayDesk shows "50 of 50 sent" → summary email. **74 seconds**
+  (Gmail sending is ~62 s of it, about 1.3 s per email – Google's speed, fine). Before: 2–3 hours by hand.
+- n8n workflow: "PayDesk · 01 Station salary emails (EN + Arabic)", published (v3). File: `n8n/01-station-emails.json`.
+- Google Sheet log: "PayDesk - Station email log" (made in shahwaizsulehri098, shared with invoiceautopilot.demo as Editor).
+- Demo inbox + n8n Google account: invoiceautopilot.demo@gmail.com
+- Fixes learned in the first run (already in the workflow file):
+  - n8n must call PayDesk at `127.0.0.1:8001`, not `localhost` (Windows/IPv6 → "connection refused")
+  - Sheet columns set explicitly; PayDesk report runs beside the Sheet (a Sheet error never blocks it)
+  - Gemini Flash-Lite sometimes says 503 "high demand" → 5 retries; still failing = English-only email
+  - After any change in n8n, click **Publish** again
+- **To do later (Shahwaiz decided to wait):**
+  - Make a new Gemini key (the old one was shown in a chat) → update `.env` and the n8n Gemini credential
+  - Google Cloud project "Invoice Autopilot" (owned by the demo account): Google Auth Platform → Audience →
+    **Publish app** (Testing → In production), then reconnect Gmail + Sheets in n8n once. Stops the 7-day sign-in expiry.
+  - Invoice Autopilot workflows are broken (old Gmail credential deleted) – leave until needed
+  - Demo video: record at the end of the project (fresh demo database, empty demo inbox, one clean run)
+- **Next action:** design automation 2 (approval by email: summary + Approve / Send back buttons).
+
+## PowerShell windows (numbered in the order you open them)
+- **Window 1 – commands** (`backend` folder): tests, Git, `.env`
+- **Window 2 – backend**: `.venv\Scripts\Activate.ps1` → `python -m uvicorn app.main:app --reload --port 8001`
+- **Window 3 – frontend** (`frontend` folder): `npm run dev`
+- **Window 4 – n8n**: `npx n8n@2.45.7` → http://localhost:5678
 
 ## Done today (11 Nov 2026)
 - Decided: **no CODesk link**. PayDesk stays separate. Shortages and advances keep coming from the adjustments file.
 - Stage 8 – driver payslip page + "Why is my salary this?" AI chat.
 - AI chat made faster: it uses the quick flash-lite model first and keeps the Google connection open.
-  Window 3 prints `[ai] <model> answered in X s` after every AI answer.
+  the backend window prints `[ai] <model> answered in X s` after every AI answer.
 - Fixed `.env`: it had been overwritten by an old progress note, so AI was off.
   Never paste notes or other text into `.env` (see Notes for the lines it holds).
 - Stage 9 – driver disputes + accountant inbox + AI-drafted replies.
@@ -99,16 +116,16 @@ PayDesk is an **AI automation project, not a web project**. The web app is only 
 (where data lives, people look and click). **n8n, Power Automate and Gemini do the visible work.**
 LinkedIn story: "Monthly driver payroll for 50 stations took hours of files, checks, emails and follow-ups.
 Now the accountant clicks 2 buttons – 12 automations do the rest." (use real iMile "before" times)
-Rules: discuss each automation's design first, then build. Demo data only. Demo emails: only ONE real email
-to Shahwaiz's own inbox; the other stations are logged (n8n run history / Google Sheet), never sent.
+Rules: discuss each automation's design first, then build. Demo data only. Demo emails: all go to the demo
+Gmail (`DEMO_INBOX`, the Invoice Autopilot account) – never to a real station.
 Claude writes n8n workflows as JSON files in `paydesk/n8n/` (import in n8n); Shahwaiz connects his own
 accounts. Power Automate is built click-by-click together. After each workflow: explain every node simply.
 
 ## The 12 automations (build order)
 | # | Automation | Tool | Status |
 |---|---|---|---|
-| 1 | Station emails EN + Arabic on approval (demo: 1 real email, rest logged) | n8n + Gemini + Gmail | **NEXT** |
-| 2 | Approval by email: summary + Approve / Send back buttons | n8n | |
+| 1 | Station emails EN + Arabic on approval (all 50 to the demo Gmail, logged in a Sheet) | n8n + Gemini + Gmail | ✅ done (74 s) |
+| 2 | Approval by email: summary + Approve / Send back buttons | n8n | NEXT |
 | 3 | Cashier replies "paid" → tracker updated + Teams/notice | Power Automate | |
 | 4 | Traffic fine PDF/photo by email → Gemini reads → matched to driver | n8n + Gemini | |
 | 5 | Month-end report: paid/unpaid/disputed + AI summary email + Power BI | n8n + Gemini + Power BI | |
@@ -121,11 +138,11 @@ accounts. Power Automate is built click-by-click together. After each workflow: 
 | 12 | Daily reminder to stations that haven't confirmed paid | n8n schedule | |
 
 Already built inside PayDesk (keep, becomes the data behind the automations): Stages 0–10, Outbox
-(station emails saved, Excel per station), "Send a real copy" button + `N8N_WEBHOOK_URL` (will be reworked in automation 1).
+(station emails saved, Excel per station) – now used by automation 1.
 
-## How to start (3 PowerShell windows)
+## How to start (open Window 1, 2, 3 in this order; Window 4 = n8n)
 
-**Window 3 – Backend** (leave it running, don't type in it)
+**Window 2 – Backend** (leave it running, don't type in it)
 ```powershell
 cd "C:\Users\Best Laptop\Documents\paydesk\backend"
 ```
@@ -136,7 +153,7 @@ cd "C:\Users\Best Laptop\Documents\paydesk\backend"
 python -m uvicorn app.main:app --reload --port 8001
 ```
 
-**Window 4 – Frontend** (leave it running, don't type in it)
+**Window 3 – Frontend** (leave it running, don't type in it)
 ```powershell
 cd "C:\Users\Best Laptop\Documents\paydesk\frontend"
 ```
@@ -144,7 +161,7 @@ cd "C:\Users\Best Laptop\Documents\paydesk\frontend"
 npm run dev
 ```
 
-**Window 5 – Commands** (tests, Git, scripts)
+**Window 1 – Commands** (tests, Git, scripts) – open this one first
 ```powershell
 cd "C:\Users\Best Laptop\Documents\paydesk\backend"
 ```
@@ -154,11 +171,11 @@ cd "C:\Users\Best Laptop\Documents\paydesk\backend"
 
 Open **http://localhost:5174**
 
-## Useful commands (Window 5, backend folder)
+## Useful commands (Window 1, backend folder)
 - Make demo data: `.venv\Scripts\python.exe scripts\generate_demo_data.py`
 - Load September + October and calculate both: `.venv\Scripts\python.exe scripts\load_demo_months.py`
 - Fresh demo database:
-  1. Stop Window 3.
+  1. Stop Window 2.
   2. `Remove-Item paydesk-demo.db`
   3. `$env:SEED_DEMO_DATA="true"`
   4. Start uvicorn.
@@ -178,7 +195,9 @@ Open **http://localhost:5174**
 
 ## Notes
 - `backend\.env` has only these lines (Git ignores it; never share it, never paste other text into it):
-  `GEMINI_API_KEY=...` and `N8N_WEBHOOK_URL=http://localhost:5678/webhook/paydesk-station-email`
+  `GEMINI_API_KEY=...`, `N8N_MONTH_APPROVED_URL=http://localhost:5678/webhook/paydesk-month-approved`,
+  `AUTOMATION_KEY=...` (same value as the "PayDesk key" credential in n8n), `DEMO_INBOX=...` (demo Gmail)
+- n8n workflows live in `paydesk/n8n/` (see `n8n/README.md` for credentials and the Google Sheet headers).
 - Power Automate: planned for Stage 12 (cashier replies "paid" → update Excel/Teams), not for the station email.
 - Claude writes code files straight into the paydesk folder (folder access is granted). Shahwaiz runs the commands.
 - PowerShell opens as Administrator in `system32`, so always `cd` to the paydesk folder first.

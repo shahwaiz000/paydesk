@@ -1,0 +1,614 @@
+{
+  "name": "PayDesk · 01 Station salary emails (EN + Arabic)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "paydesk-month-approved",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "729b50cf-ba40-4f69-ba5f-54c409b9f458",
+      "name": "Month approved",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "029f1170-c03e-4e3c-abb3-2df2067461d5"
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/months/{{ $json.body.month_id }}/station-emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "efc36d36-3e82-4b2a-bf78-0dc044cc6b47",
+      "name": "Get station emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Automation 1 - step 3: the email text in English, with {PLACEHOLDERS} for the numbers.\n// Gemini translates this ONCE (not 50 times) -> fast and inside the free limit.\nconst en = {\n  subject: \"{MONTH} driver salaries – {STATION}\",\n  demo: \"DEMO – this email is for {CASHIER}. PayDesk sent it to the demo inbox instead.\",\n  greeting: \"Dear {STATION} cashier,\",\n  approved: \"The {MONTH} driver salaries are approved and final.\",\n  drivers_line: \"Drivers at your station: {DRIVERS}\",\n  cash_line: \"Cash drivers (you pay): {CASH_N} – SAR {CASH_AMOUNT}\",\n  bank_line: \"Bank drivers (bank pays): {BANK_N} – SAR {BANK_AMOUNT}\",\n  prepare: \"Please prepare SAR {CASH_AMOUNT} in cash and pay these drivers:\",\n  instruction: \"Pay each driver the exact amount, ask him to sign the attached sheet, and keep the signed sheet for the finance team.\",\n  no_cash: \"You have no cash drivers this month – nothing to pay in cash.\",\n  bank_note: \"Bank drivers will receive their salary by bank transfer. You don't pay them.\",\n  disputes: \"Drivers can see their full payslip in PayDesk. If a driver doesn't agree with an amount, he can press \\\"I don't agree\\\" on his payslip.\",\n  regards: \"Regards,\",\n  team: \"Payroll team – PayDesk\",\n  col_id: \"Driver ID\",\n  col_name: \"Name\",\n  col_net: \"Net to pay (SAR)\",\n  total: \"Total\",\n};\n\nconst prompt =\n  \"Translate the VALUES of this JSON object into clear, polite Modern Standard Arabic \" +\n  \"for a Saudi logistics company email to a station cashier. \" +\n  \"Keep every placeholder in curly braces (like {STATION}) exactly as it is - do not translate or remove them. \" +\n  \"Keep the words SAR and PayDesk in English. Keep the same keys. Return only the JSON object.\\n\\n\" +\n  JSON.stringify(en, null, 2);\n\nreturn [{\n  json: {\n    en,\n    request: {\n      contents: [{ role: \"user\", parts: [{ text: prompt }] }],\n      generationConfig: { temperature: 0.2, responseMimeType: \"application/json\" },\n    },\n  },\n}];\n"
+      },
+      "id": "d8855583-afb3-4086-8fc5-888119d78398",
+      "name": "Prepare Arabic request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "92675ce9-3a26-4f90-a887-6a7fa243c624",
+      "name": "Gemini: Arabic text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Automation 1 - step 5: build one English + Arabic email for every station.\nconst data = $('Get station emails').first().json;\nconst en = $('Prepare Arabic request').first().json.en;\n\n// Read Gemini's Arabic. If anything is wrong, send English only (the email still goes out).\nlet ar = null;\ntry {\n  const g = $input.first().json;\n  const text = g.candidates[0].content.parts[0].text.replace(/```json|```/g, \"\").trim();\n  const obj = JSON.parse(text);\n  for (const k of Object.keys(en)) {\n    const need = en[k].match(/\\{[A-Z_]+\\}/g) || [];\n    if (typeof obj[k] !== \"string\" || !need.every((p) => obj[k].includes(p))) throw new Error(\"bad key \" + k);\n  }\n  ar = obj;\n} catch (e) {\n  ar = null;\n}\n\nconst money = (x) => Number(x).toLocaleString(\"en-US\", { minimumFractionDigits: 2, maximumFractionDigits: 2 });\nconst esc = (s) => String(s).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\n\nfunction fill(t, st) {\n  return esc(t)\n    .replaceAll(\"{STATION}\", esc(`${st.station_code} ${st.station}`))\n    .replaceAll(\"{MONTH}\", esc(data.month_name))\n    .replaceAll(\"{CASHIER}\", esc(st.cashier_email))\n    .replaceAll(\"{DRIVERS}\", st.drivers)\n    .replaceAll(\"{CASH_N}\", st.cash_drivers)\n    .replaceAll(\"{CASH_AMOUNT}\", money(st.cash_total))\n    .replaceAll(\"{BANK_N}\", st.bank_drivers)\n    .replaceAll(\"{BANK_AMOUNT}\", money(st.bank_total));\n}\n\nconst cell = \"padding:6px 10px;border:1px solid #cbd5e1;\";\n\nfunction section(L, st, rtl) {\n  const align = rtl ? \"right\" : \"left\";\n  const end = rtl ? \"left\" : \"right\";\n  let h = `<div dir=\"${rtl ? \"rtl\" : \"ltr\"}\" ${rtl ? 'lang=\"ar\"' : \"\"} style=\"text-align:${align};font-family:${rtl ? \"Tahoma,\" : \"\"}Arial,sans-serif;font-size:14px;color:#1e293b;line-height:1.6\">`;\n  h += `<p>${fill(L.greeting, st)}</p><p><b>${fill(L.approved, st)}</b></p>`;\n  h += `<ul style=\"padding-${align}:20px\"><li>${fill(L.drivers_line, st)}</li><li>${fill(L.cash_line, st)}</li><li>${fill(L.bank_line, st)}</li></ul>`;\n  if (st.cash_list.length) {\n    h += `<p>${fill(L.prepare, st)}</p>`;\n    h += `<table style=\"border-collapse:collapse;font-size:13px\"><tr style=\"background:#e0e7ff\">`;\n    h += `<th style=\"${cell}\">#</th><th style=\"${cell}\">${fill(L.col_id, st)}</th><th style=\"${cell}\">${fill(L.col_name, st)}</th><th style=\"${cell}text-align:${end}\">${fill(L.col_net, st)}</th></tr>`;\n    st.cash_list.forEach((d, i) => {\n      h += `<tr><td style=\"${cell}\">${i + 1}</td><td style=\"${cell}\">${esc(d.driver_id)}</td><td style=\"${cell}\" dir=\"ltr\">${esc(d.name)}</td><td style=\"${cell}text-align:${end}\">${money(d.net)}</td></tr>`;\n    });\n    h += `<tr style=\"font-weight:bold\"><td style=\"${cell}\" colspan=\"3\">${fill(L.total, st)}</td><td style=\"${cell}text-align:${end}\">${money(st.cash_total)}</td></tr></table>`;\n    h += `<p>${fill(L.instruction, st)}</p>`;\n  } else {\n    h += `<p>${fill(L.no_cash, st)}</p>`;\n  }\n  if (st.bank_drivers) h += `<p>${fill(L.bank_note, st)}</p>`;\n  h += `<p>${fill(L.disputes, st)}</p><p>${fill(L.regards, st)}<br>${fill(L.team, st)}</p></div>`;\n  return h;\n}\n\nreturn data.stations.map((st) => {\n  let html = `<div style=\"max-width:720px\">`;\n  html += `<p style=\"background:#fef3c7;color:#92400e;padding:8px 12px;border-radius:6px;font-family:Arial,sans-serif;font-size:12px\">${fill(en.demo, st)}</p>`;\n  html += section(en, st, false);\n  if (ar) html += `<hr style=\"margin:24px 0;border:none;border-top:1px solid #e2e8f0\">` + section(ar, st, true);\n  html += `</div>`;\n  const subject = st.subject + (ar ? \" | \" + fill(ar.subject, st).replace(/&amp;/g, \"&\") : \"\");\n  return {\n    json: {\n      email_id: st.email_id, period: data.period, month_name: data.month_name,\n      station_code: st.station_code, station: st.station, cashier_email: st.cashier_email,\n      send_to: st.send_to, subject, html, arabic: !!ar,\n      drivers: st.drivers, cash_drivers: st.cash_drivers, cash_total: st.cash_total,\n      bank_drivers: st.bank_drivers, bank_total: st.bank_total,\n    },\n  };\n});\n"
+      },
+      "id": "e3c13d59-5b46-4754-be25-a8c155d8be9b",
+      "name": "Build emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/outbox/{{ $json.email_id }}/attachment",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "c0c7cc01-d737-425e-ab8e-0b12cb635e5e",
+      "name": "Download Excel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Build emails').item.json.send_to }}",
+        "subject": "={{ $('Build emails').item.json.subject }}",
+        "emailType": "html",
+        "message": "={{ $('Build emails').item.json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "data"
+              }
+            ]
+          }
+        }
+      },
+      "id": "766c4f23-7c6e-4b72-b04d-e1a5719b499c",
+      "name": "Send with Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1320,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Automation 1 - step 8: did Gmail send it? Make one log row for this station.\nconst b = $('Build emails').item.json;\nconst r = $json;\nconst ok = !r.error && !!r.id;\nreturn {\n  json: {\n    time: new Date().toISOString(),\n    period: b.period,\n    station_code: b.station_code,\n    station: b.station,\n    cashier_email: b.cashier_email,\n    sent_to: b.send_to,\n    drivers: b.drivers,\n    cash_drivers: b.cash_drivers,\n    cash_total: b.cash_total,\n    bank_drivers: b.bank_drivers,\n    bank_total: b.bank_total,\n    arabic: b.arabic ? \"yes\" : \"no\",\n    status: ok ? \"sent\" : \"failed\",\n    gmail_id: ok ? r.id : \"\",\n    error: ok ? \"\" : String(r.error?.message ?? r.error ?? \"unknown error\"),\n    email_id: b.email_id,\n  },\n};\n"
+      },
+      "id": "00250c1a-0a9a-45b8-80d6-45791148fe08",
+      "name": "Result per station",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "time": "={{ $json.time }}",
+            "period": "={{ $json.period }}",
+            "station_code": "={{ $json.station_code }}",
+            "station": "={{ $json.station }}",
+            "cashier_email": "={{ $json.cashier_email }}",
+            "sent_to": "={{ $json.sent_to }}",
+            "drivers": "={{ $json.drivers }}",
+            "cash_drivers": "={{ $json.cash_drivers }}",
+            "cash_total": "={{ $json.cash_total }}",
+            "bank_drivers": "={{ $json.bank_drivers }}",
+            "bank_total": "={{ $json.bank_total }}",
+            "arabic": "={{ $json.arabic }}",
+            "status": "={{ $json.status }}",
+            "gmail_id": "={{ $json.gmail_id }}",
+            "error": "={{ $json.error }}",
+            "email_id": "={{ $json.email_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "period",
+              "displayName": "period",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "station_code",
+              "displayName": "station_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "station",
+              "displayName": "station",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cashier_email",
+              "displayName": "cashier_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sent_to",
+              "displayName": "sent_to",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "drivers",
+              "displayName": "drivers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cash_drivers",
+              "displayName": "cash_drivers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cash_total",
+              "displayName": "cash_total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "bank_drivers",
+              "displayName": "bank_drivers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "bank_total",
+              "displayName": "bank_total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "arabic",
+              "displayName": "arabic",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "gmail_id",
+              "displayName": "gmail_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email_id",
+              "displayName": "email_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "659086ca-8bdf-4a6e-a5d9-99b3eacf66b4",
+      "name": "Log to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        440
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8001/api/automation/outbox/{{ $('Result per station').item.json.email_id }}/result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $('Result per station').item.json.status, gmail_id: $('Result per station').item.json.gmail_id || null, note: $('Result per station').item.json.error || null }) }}",
+        "options": {}
+      },
+      "id": "ddb9901b-7a9e-432f-90e1-4fd3a044c9f6",
+      "name": "Report to PayDesk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8001/api/automation/months/{{ $('Month approved').first().json.body.month_id }}/run-finished",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "3495d467-295a-4856-9f93-48f0c9c70746",
+      "name": "Run finished",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        300
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.notify_to }}",
+        "subject": "=PayDesk: {{ $json.month_name }} – {{ $json.sent }} of {{ $json.stations }} station emails sent in {{ $json.seconds }} s",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#1e293b\"><h2 style=\"margin:0 0 8px\">{{ $json.month_name }} – station salary emails</h2><p><b>{{ $json.sent }} of {{ $json.stations }}</b> stations sent in <b>{{ $json.seconds }} seconds</b>{{ $json.failed ? ' · <span style=\"color:#b91c1c\">' + $json.failed + ' failed</span>' : '' }}.</p><ul><li>Cash to prepare at stations: <b>SAR {{ Number($json.cash_total).toLocaleString('en-US', {minimumFractionDigits: 2}) }}</b></li><li>Bank transfers: <b>SAR {{ Number($json.bank_total).toLocaleString('en-US', {minimumFractionDigits: 2}) }}</b></li></ul><p>Every email was written in English + Arabic (Gemini), sent with its Excel sheet, and logged in the Google Sheet.</p><p><a href=\"{{ $json.outbox_url }}\">Open the Outbox in PayDesk</a></p><p style=\"color:#64748b;font-size:12px\">Sent by n8n – PayDesk automation 1</p></div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b29a95a6-03c4-4121-8753-7e5c20141232",
+      "name": "Summary to accountant",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 1 · PayDesk calls this when the finance manager clicks Approve & lock",
+        "height": 380,
+        "width": 520,
+        "color": 7
+      },
+      "id": "402ffc4e-301c-490c-9e03-7768c136e42a",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2 · Gemini writes the Arabic text ONCE (template with placeholders)",
+        "height": 380,
+        "width": 440,
+        "color": 5
+      },
+      "id": "b187f83b-1c4a-4242-8ede-09abfbcf2531",
+      "name": "Note 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        420,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3 · For every station: Excel + Gmail + log + report back",
+        "height": 380,
+        "width": 1100,
+        "color": 4
+      },
+      "id": "53a93549-cf5c-4ae4-9da9-2aeaf2d5e32b",
+      "name": "Note 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4 · One summary email to the accountant",
+        "height": 380,
+        "width": 440,
+        "color": 6
+      },
+      "id": "6e991ac5-97a0-41f8-96da-ae39a4542b5d",
+      "name": "Note 4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2180,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Month approved": {
+      "main": [
+        [
+          {
+            "node": "Get station emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get station emails": {
+      "main": [
+        [
+          {
+            "node": "Prepare Arabic request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Arabic request": {
+      "main": [
+        [
+          {
+            "node": "Gemini: Arabic text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini: Arabic text": {
+      "main": [
+        [
+          {
+            "node": "Build emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build emails": {
+      "main": [
+        [
+          {
+            "node": "Download Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Excel": {
+      "main": [
+        [
+          {
+            "node": "Send with Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send with Gmail": {
+      "main": [
+        [
+          {
+            "node": "Result per station",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result per station": {
+      "main": [
+        [
+          {
+            "node": "Report to PayDesk",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report to PayDesk": {
+      "main": [
+        [
+          {
+            "node": "Run finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run finished": {
+      "main": [
+        [
+          {
+            "node": "Summary to accountant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

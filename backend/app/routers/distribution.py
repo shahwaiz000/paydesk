@@ -1,24 +1,20 @@
-"""Stage 11 (part 1): send the salary email to every station.
+"""Stage 11 + Automation 1: the salary email to every station.
 
-After the finance manager approves a month, the accountant clicks ONE button and PayDesk
-makes one email per station:
+When the finance manager clicks "Approve & lock":
+  1. PayDesk prepares one email per station (body + Excel to sign) and saves it in the Outbox.
+  2. PayDesk calls the n8n webhook (N8N_MONTH_APPROVED_URL) - in the background, so approving stays fast.
+  3. n8n does the rest (see n8n/01-station-emails.json): reads the emails from PayDesk, asks Gemini
+     ONCE for the Arabic text, sends every email with Gmail, logs each one in a Google Sheet,
+     reports each result back to PayDesk and emails the accountant a summary.
 
-    To:      the station cashier
-    Body:    how many drivers, how much cash to prepare, the list of cash drivers
-    Attach:  Excel file - every driver of the station, net salary, Cash/Bank, signature column
-
-Demo mode: nothing really leaves PayDesk. The emails are saved in the Outbox, where you can
-open each one and download its Excel file - exactly what the cashier would receive.
-
-"Send a real copy": ONE email at a time goes to n8n (webhook). n8n adds an Arabic version with
-Gemini and sends it with Gmail to YOUR inbox - never to a station. The address is set in n8n only.
+Demo safety: PayDesk tells n8n to send EVERY email to DEMO_INBOX (your own Gmail).
+The real station address is only written inside the email. Nothing ever reaches a station.
 """
 
-import base64
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 import httpx
 from openpyxl import Workbook
@@ -27,7 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..config import settings
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..deps import require_roles
 from ..models import ACCOUNTANT, FINANCE_MANAGER, OutboxEmail, PayrollMonth, Salary, Station, User
 from ..payroll.engine import money
@@ -38,6 +34,8 @@ can_view = require_roles(ACCOUNTANT, FINANCE_MANAGER)
 
 DEMO_DOMAIN = "stations.paydesk.demo"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+WAITING = ("prepared", "demo", "failed")      # emails n8n still has to send
+STUCK_AFTER = timedelta(minutes=10)            # a "running" automation older than this can be started again
 
 
 def _now() -> datetime:
@@ -151,61 +149,16 @@ def build_sheet(month: PayrollMonth, st: Station, cash: list[Salary], bank: list
     return buf.getvalue()
 
 
-# ------------------------------------------------------------------ API
+# ------------------------------------------------------------------ preparing + starting n8n
 
-def email_row(e: OutboxEmail, with_body: bool = False) -> dict:
-    data = {
-        "id": e.id, "station_code": e.station.code, "station": e.station.name, "to": e.to_address,
-        "subject": e.subject, "attachment_name": e.attachment_name, "drivers": e.drivers,
-        "cash_drivers": e.cash_drivers, "cash_total": e.cash_total,
-        "bank_drivers": e.bank_drivers, "bank_total": e.bank_total,
-        "status": e.status, "sent_by": e.sent_by, "sent_at": _iso(e.sent_at),
-        "real_copies": e.real_copies or 0, "real_copy_at": _iso(e.real_copy_at),
-    }
-    if with_body:
-        data["body"] = e.body
-    return data
-
-
-def outbox_out(db: Session, month: PayrollMonth) -> dict:
-    emails = db.scalars(select(OutboxEmail).where(OutboxEmail.month_id == month.id)
-                        .options(selectinload(OutboxEmail.station)).order_by(OutboxEmail.id)).all()
-    stations = db.scalar(select(func.count(func.distinct(Salary.station_id))).where(Salary.month_id == month.id)) or 0
-    return {
-        "period": month.period, "month_status": month.status,
-        "can_send": month.status == "approved" and not emails,
-        "stations": stations,
-        "sent": len(emails),
-        "sent_at": _iso(emails[0].sent_at) if emails else None,
-        "sent_by": emails[0].sent_by if emails else None,
-        "cash_total": money(sum(e.cash_total for e in emails)),
-        "bank_total": money(sum(e.bank_total for e in emails)),
-        "emails": [email_row(e) for e in emails],
-        "n8n_ready": bool(settings.n8n_webhook_url),
-    }
-
-
-@router.get("")
-def outbox(month_id: int, db: Session = Depends(get_db), _: User = Depends(can_view)):
-    return outbox_out(db, get_month(db, month_id))
-
-
-@router.post("/send")
-def send_station_emails(month_id: int, db: Session = Depends(get_db),
-                        user: User = Depends(require_roles(ACCOUNTANT))):
-    month = get_month(db, month_id)
-    if month.status != "approved":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "The finance manager must approve this month before salaries are sent to stations")
-    if db.scalar(select(func.count()).where(OutboxEmail.month_id == month.id)):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The station emails for this month were already sent")
-
+def prepare_station_emails(db: Session, month: PayrollMonth, by: str) -> int:
+    """Make one Outbox email per station (only once per month). Returns how many exist."""
+    existing = db.scalar(select(func.count()).where(OutboxEmail.month_id == month.id)) or 0
+    if existing:
+        return existing
     salaries = db.scalars(select(Salary).where(Salary.month_id == month.id)
                           .options(selectinload(Salary.driver), selectinload(Salary.station))
                           .order_by(Salary.driver_id)).all()
-    if not salaries:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No salaries in this month")
-
     by_station: dict[int, list[Salary]] = {}
     for s in salaries:
         by_station.setdefault(s.station_id, []).append(s)
@@ -224,10 +177,153 @@ def send_station_emails(month_id: int, db: Session = Depends(get_db),
             attachment=build_sheet(month, st, cash, bank),
             drivers=len(rows), cash_drivers=len(cash), cash_total=money(sum(s.net for s in cash)),
             bank_drivers=len(bank), bank_total=money(sum(s.net for s in bank)),
-            status="demo", sent_by=user.username, sent_at=now,
+            status="prepared", sent_by=by, sent_at=now,
         ))
+    db.flush()
+    print(f"[outbox] {month.period}: {len(by_station)} station emails prepared")
+    return len(by_station)
+
+
+def missing_setup() -> list[str]:
+    """Which .env lines are still missing for automation 1."""
+    need = {"N8N_MONTH_APPROVED_URL": settings.n8n_month_approved_url,
+            "AUTOMATION_KEY": settings.automation_key, "DEMO_INBOX": settings.demo_inbox}
+    return [name for name, value in need.items() if not value]
+
+
+def _waiting(db: Session, month: PayrollMonth) -> int:
+    return db.scalar(select(func.count()).where(OutboxEmail.month_id == month.id,
+                                                 OutboxEmail.status.in_(WAITING))) or 0
+
+
+def begin_run(db: Session, month: PayrollMonth, by: str) -> bool:
+    """Mark the automation as started. Returns True if n8n should be called now."""
+    month.emails_run_by = by
+    month.emails_run_started_at = _now()
+    month.emails_run_finished_at = None
+    missing = missing_setup()
+    if missing:
+        month.emails_run_status = "not_connected"
+        month.emails_run_note = "Add " + ", ".join(missing) + " to backend\\.env and restart the backend window"
+        return False
+    month.emails_run_status = "running"
+    month.emails_run_note = None
+    return True
+
+
+def call_n8n(month_id: int) -> None:
+    """Runs in the background after the response is sent: tell n8n to start."""
+    with SessionLocal() as db:
+        month = db.get(PayrollMonth, month_id)
+        if month is None:
+            return
+        payload = {"source": "PayDesk", "event": "month_approved", "month_id": month.id,
+                   "period": month.period, "month_name": month_name(month.period),
+                   "stations_to_send": _waiting(db, month)}
+        note = None
+        try:
+            res = httpx.post(settings.n8n_month_approved_url, json=payload, timeout=20)
+            if res.status_code == 404:
+                note = "n8n answered 404 - is the workflow published (Active)?"
+            elif res.status_code >= 400:
+                note = f"n8n answered with error {res.status_code}"
+        except httpx.HTTPError:
+            note = "Can't reach n8n. Is it running (npx n8n@2.45.7)?"
+        if note:
+            month.emails_run_status = "failed"
+            month.emails_run_note = note
+            month.emails_run_finished_at = _now()
+            print(f"[automation 1] {month.period}: {note}")
+        else:
+            print(f"[automation 1] {month.period}: n8n started ({payload['stations_to_send']} stations)")
+        db.commit()
+
+
+def run_seconds(month: PayrollMonth) -> int | None:
+    if month.emails_run_started_at and month.emails_run_finished_at:
+        return max(0, round((month.emails_run_finished_at - month.emails_run_started_at).total_seconds()))
+    return None
+
+
+# ------------------------------------------------------------------ API (logged-in users)
+
+def _status(e: OutboxEmail) -> str:
+    return "prepared" if e.status == "demo" else e.status
+
+
+def email_row(e: OutboxEmail, with_body: bool = False) -> dict:
+    data = {
+        "id": e.id, "station_code": e.station.code, "station": e.station.name, "to": e.to_address,
+        "subject": e.subject, "attachment_name": e.attachment_name, "drivers": e.drivers,
+        "cash_drivers": e.cash_drivers, "cash_total": e.cash_total,
+        "bank_drivers": e.bank_drivers, "bank_total": e.bank_total,
+        "status": _status(e), "prepared_at": _iso(e.sent_at),
+        "delivered_to": e.delivered_to, "delivered_at": _iso(e.delivered_at),
+        "gmail_id": e.gmail_id, "delivery_note": e.delivery_note,
+    }
+    if with_body:
+        data["body"] = e.body
+    return data
+
+
+def _can_run(month: PayrollMonth, waiting: int) -> bool:
+    if month.status != "approved" or waiting == 0:
+        return False
+    if month.emails_run_status == "running":
+        return bool(month.emails_run_started_at and _now() - month.emails_run_started_at > STUCK_AFTER)
+    return True
+
+
+def outbox_out(db: Session, month: PayrollMonth) -> dict:
+    emails = db.scalars(select(OutboxEmail).where(OutboxEmail.month_id == month.id)
+                        .options(selectinload(OutboxEmail.station)).order_by(OutboxEmail.id)).all()
+    stations = db.scalar(select(func.count(func.distinct(Salary.station_id))).where(Salary.month_id == month.id)) or 0
+    statuses = [_status(e) for e in emails]
+    waiting = sum(1 for x in statuses if x in WAITING)
+    return {
+        "period": month.period, "month_status": month.status,
+        "stations": stations,
+        "prepared": len(emails),
+        "delivered": statuses.count("sent"),
+        "failed": statuses.count("failed"),
+        "waiting": waiting,
+        "cash_total": money(sum(e.cash_total for e in emails)),
+        "bank_total": money(sum(e.bank_total for e in emails)),
+        "run": {
+            "status": month.emails_run_status, "by": month.emails_run_by,
+            "started_at": _iso(month.emails_run_started_at), "finished_at": _iso(month.emails_run_finished_at),
+            "seconds": run_seconds(month), "note": month.emails_run_note,
+        },
+        "can_run": _can_run(month, waiting if emails else stations),
+        "n8n_ready": not missing_setup(),
+        "missing_setup": missing_setup(),
+        "demo_inbox": settings.demo_inbox or None,
+        "emails": [email_row(e) for e in emails],
+    }
+
+
+@router.get("")
+def outbox(month_id: int, db: Session = Depends(get_db), _: User = Depends(can_view)):
+    return outbox_out(db, get_month(db, month_id))
+
+
+@router.post("/run")
+def run_automation(month_id: int, tasks: BackgroundTasks, db: Session = Depends(get_db),
+                   user: User = Depends(require_roles(ACCOUNTANT))):
+    """Start automation 1 again (n8n wasn't connected, failed, or some emails failed).
+    n8n only gets the emails that are not sent yet - nobody gets the same email twice."""
+    month = get_month(db, month_id)
+    if month.status != "approved":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "The finance manager must approve this month before salaries are sent to stations")
+    prepare_station_emails(db, month, user.username)
+    if not _can_run(month, _waiting(db, month)):
+        reason = ("The automation is already running" if month.emails_run_status == "running"
+                  else "All station emails are already sent")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, reason)
+    if begin_run(db, month, user.username):
+        tasks.add_task(call_n8n, month.id)
     db.commit()
-    print(f"[outbox] {month.period}: {len(by_station)} station emails saved (demo - not really sent)")
     return outbox_out(db, month)
 
 
@@ -248,49 +344,3 @@ def download_attachment(month_id: int, email_id: int, db: Session = Depends(get_
     e = _get_email(db, get_month(db, month_id), email_id)
     return StreamingResponse(io.BytesIO(e.attachment), media_type=XLSX,
                              headers={"Content-Disposition": f'attachment; filename="{e.attachment_name}"'})
-
-
-MAX_REAL_COPIES_PER_DAY = 10      # safety: nobody can flood your inbox by clicking many times
-
-
-@router.post("/{email_id}/real-copy")
-def send_real_copy(month_id: int, email_id: int, db: Session = Depends(get_db),
-                   user: User = Depends(require_roles(ACCOUNTANT))):
-    """Send ONE station email to n8n, which emails a real copy to your own Gmail."""
-    month = get_month(db, month_id)
-    e = _get_email(db, month, email_id)
-    if not settings.n8n_webhook_url:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "n8n is not connected. Add N8N_WEBHOOK_URL=... to backend\\.env and restart Window 3")
-    today = _now().replace(hour=0, minute=0, second=0, microsecond=0)
-    sent_today = db.scalar(select(func.sum(OutboxEmail.real_copies))
-                           .where(OutboxEmail.real_copy_at >= today)) or 0
-    if sent_today >= MAX_REAL_COPIES_PER_DAY:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
-                            f"Limit reached: {MAX_REAL_COPIES_PER_DAY} real copies per day")
-
-    payload = {
-        "source": "PayDesk", "period": month.period, "month_name": month_name(month.period),
-        "station_code": e.station.code, "station": e.station.name,
-        "station_email": e.to_address,             # shown in the email only - n8n sends to YOUR address
-        "subject": e.subject, "body": e.body,
-        "drivers": e.drivers, "cash_drivers": e.cash_drivers, "cash_total": e.cash_total,
-        "bank_drivers": e.bank_drivers, "bank_total": e.bank_total,
-        "attachment_name": e.attachment_name,
-        "attachment_base64": base64.b64encode(e.attachment).decode(),
-        "sent_by": user.username,
-    }
-    try:
-        res = httpx.post(settings.n8n_webhook_url, json=payload, timeout=90)
-    except httpx.HTTPError:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                            "Can't reach n8n. Is n8n running (npx n8n@2.45.7) and the workflow published?")
-    if res.status_code >= 400:
-        hint = " (workflow not published/active?)" if res.status_code == 404 else ""
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"n8n answered with error {res.status_code}{hint}")
-
-    e.real_copies = (e.real_copies or 0) + 1
-    e.real_copy_at = _now()
-    db.commit()
-    print(f"[outbox] real copy of {e.station.code} sent to n8n")
-    return email_row(e, with_body=True)
