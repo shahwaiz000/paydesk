@@ -89,7 +89,10 @@
     **Publish app** (Testing → In production), then reconnect Gmail + Sheets in n8n once. Stops the 7-day sign-in expiry.
   - Invoice Autopilot workflows are broken (old Gmail credential deleted) – leave until needed
   - Demo video: record at the end of the project (fresh demo database, empty demo inbox, one clean run)
-- **Next action:** design automation 2 (approval by email: summary + Approve / Send back buttons).
+- Google Cloud project "Invoice Autopilot" is now **In production** (13 Nov) and Gmail + Sheets were reconnected in n8n
+  → sign-ins no longer expire every 7 days. (Gemini key change still to do later.)
+- **Next action:** build automation 2 "Why was my salary cut?" (design agreed 13 Nov – see below).
+  First step for Shahwaiz: Telegram → @BotFather → `/newbot` → "PayDesk Demo Bot" → keep the token private (goes into n8n).
 
 ## PowerShell windows (numbered in the order you open them)
 - **Window 1 – commands** (`backend` folder): tests, Git, `.env`
@@ -121,21 +124,34 @@ Gmail (`DEMO_INBOX`, the Invoice Autopilot account) – never to a real station.
 Claude writes n8n workflows as JSON files in `paydesk/n8n/` (import in n8n); Shahwaiz connects his own
 accounts. Power Automate is built click-by-click together. After each workflow: explain every node simply.
 
-## The 12 automations (build order)
-| # | Automation | Tool | Status |
+## The main automations (decided 13 Nov 2026 – only real problems, one LinkedIn post each)
+The 12-automation list was cut down: people get confused by many small automations. Each one must be a real
+pain Shahwaiz knows from iMile, with a true before → after. No made-up "before" times.
+
+| # | Real problem | Tool | Status |
 |---|---|---|---|
-| 1 | Station emails EN + Arabic on approval (all 50 to the demo Gmail, logged in a Sheet) | n8n + Gemini + Gmail | ✅ done (74 s) |
-| 2 | Approval by email: summary + Approve / Send back buttons | n8n | NEXT |
-| 3 | Cashier replies "paid" → tracker updated + Teams/notice | Power Automate | |
-| 4 | Traffic fine PDF/photo by email → Gemini reads → matched to driver | n8n + Gemini | |
-| 5 | Month-end report: paid/unpaid/disputed + AI summary email + Power BI | n8n + Gemini + Power BI | |
-| 6 | Month files arrive by email → uploaded + checked → accountant told | n8n | |
-| 7 | SAB bank transfer file built + emailed to finance | n8n / Power Automate | |
-| 8 | "Your salary is ready" message to drivers (demo: Telegram bot) | n8n | |
-| 9 | AI payroll check: Gemini briefing on unusual salaries | n8n + Gemini | |
-| 10 | Driver complaint triage: Gemini sorts + drafts reply | Power Automate / n8n + Gemini | |
-| 11 | Missing-file chaser (file not in by the 2nd → reminder) | n8n schedule | |
-| 12 | Daily reminder to stations that haven't confirmed paid | n8n schedule | |
+| 1 | Sending each station its salary list (2–3 h by hand) | n8n + Gemini + Gmail | ✅ done – 74 s |
+| 2 | Drivers asking "why was my salary cut?" | n8n + Gemini + Telegram | **NEXT – design agreed** |
+| 3 | Chasing 50 cashiers to confirm "paid" + signed sheets | Power Automate | later |
+| – | Bank salary file (SAB) | ? | only if Shahwaiz learns the real process from the accountant |
+| – | Approval by email | – | dropped (approval already works in PayDesk, not a real pain) |
+
+### Automation 2 – "Why was my salary cut?" (agreed design)
+Real "before" (Shahwaiz is a cashier): drivers ask the station cashier why salary was deducted; the cashier doesn't
+know, says "ask the hub"; the hub doesn't reply; the driver never gets an answer.
+1. **Salary message** (n8n workflow 02): after automation 1 finishes, every linked driver gets his salary explained
+   on Telegram in English + Arabic – net, how it was earned, every deduction with its reason.
+2. **Chat bot** (n8n workflow 03): driver asks "why 300 cut?" → n8n gets ONLY his payslip from PayDesk → Gemini
+   answers from those facts, in the language he wrote (English/Arabic).
+3. **"This is wrong"** → bot opens a dispute in PayDesk (Stage 9) → accountant answers in PayDesk → n8n sends the
+   answer to the driver on Telegram.
+- Safety: driver links his chat once with driver ID + PIN, sees only his own salary; no Iqama/IBAN to AI; AI never
+  changes money; questions per hour limited.
+- Demo: Telegram (free); real life would be WhatsApp (paid Business API). Only Shahwaiz's own Telegram is linked to
+  1–2 demo drivers. Local n8n can't receive Telegram webhooks → n8n polls Telegram every few seconds.
+- To build in PayDesk: Telegram link (chat id ↔ driver), automation endpoints (link with ID+PIN, payslip facts,
+  create dispute, answered disputes to deliver), call n8n after automation 1 / when a dispute is answered.
+- For the post: ask the accountant roughly how many deduction questions/calls he gets per month.
 
 Already built inside PayDesk (keep, becomes the data behind the automations): Stages 0–10, Outbox
 (station emails saved, Excel per station) – now used by automation 1.
