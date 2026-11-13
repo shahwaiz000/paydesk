@@ -63,7 +63,7 @@ export default function DriverPage() {
       </div>
 
       <h2 className="mt-8 text-lg font-bold text-slate-800">Salary history</h2>
-      <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>

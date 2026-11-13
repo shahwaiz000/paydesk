@@ -47,7 +47,7 @@ export const MONTH_STATUS: Record<string, { label: string; style: string }> = {
   ready: { label: "Ready to calculate", style: "bg-emerald-50 text-emerald-700" },
   calculated: { label: "Calculated", style: "bg-indigo-50 text-indigo-700" },
   submitted: { label: "Waiting for approval", style: "bg-violet-50 text-violet-700" },
-  approved: { label: "🔒 Approved & locked", style: "bg-slate-800 text-white" },
+  approved: { label: "Approved", style: "bg-slate-800 text-white" },
 };
 
 export const EDITABLE_MONTH = ["draft", "ready", "calculated"];

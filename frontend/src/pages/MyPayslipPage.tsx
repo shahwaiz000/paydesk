@@ -66,7 +66,7 @@ export default function MyPayslipPage() {
           <span className="text-sm text-indigo-100">Payslip · {monthLabel(p.period)}</span>
           <StatusBadge final={p.final} light />
         </div>
-        <p className="mt-2 text-4xl font-bold">SAR {sar(p.net)}</p>
+        <p className="mt-2 text-4xl font-semibold">SAR {sar(p.net)}</p>
         <p className="mt-1 text-sm text-indigo-100">
           {p.driver_id} · {p.station} · {p.payment_method === "Bank" ? "Bank transfer" : "Cash at your station"}
         </p>
@@ -81,7 +81,7 @@ export default function MyPayslipPage() {
         </p>
       )}
 
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <h2 className="font-bold text-slate-800">Your salary in simple words</h2>
         <ul className="mt-2 space-y-1.5 text-sm text-slate-700">
           {p.in_words.map((s, i) => (
@@ -93,7 +93,7 @@ export default function MyPayslipPage() {
         </ul>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Earnings</p>
         <Row
           label="Fixed salary"
@@ -114,9 +114,9 @@ export default function MyPayslipPage() {
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Deductions</p>
-        {deductions.length === 0 && <p className="py-2 text-sm text-slate-500">No deductions this month 🎉</p>}
+        {deductions.length === 0 && <p className="py-2 text-sm text-slate-500">Nothing was deducted this month.</p>}
         {deductions.map((d, i) => (
           <div key={i} className="border-b border-slate-100 py-3 last:border-0">
             <div className="flex justify-between gap-4 text-slate-800">
@@ -155,10 +155,10 @@ export default function MyPayslipPage() {
 
       <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-900 p-5 text-white">
         <span className="font-semibold">You receive</span>
-        <span className="text-2xl font-bold">SAR {sar(p.net)}</span>
+        <span className="text-2xl font-semibold">SAR {sar(p.net)}</span>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="font-bold text-slate-800">Something wrong?</h2>
@@ -187,8 +187,8 @@ export default function MyPayslipPage() {
       <PayslipChat key={p.month_id} monthId={p.month_id} enabled={p.ai_enabled} />
 
       {daily.length > 0 && (
-        <details className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-          <summary className="cursor-pointer font-bold text-slate-800">
+        <details className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+          <summary className="cursor-pointer font-semibold text-slate-800">
             Day by day <span className="text-sm font-normal text-slate-500">({daily.length} days with deliveries)</span>
           </summary>
           <table className="mt-3 w-full text-sm">

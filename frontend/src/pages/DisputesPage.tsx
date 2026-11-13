@@ -33,8 +33,8 @@ export default function DisputesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800">Driver disputes</h1>
-      <p className="mt-1 text-slate-500">Drivers who don't agree with something on their payslip.</p>
+      <h1 className="text-2xl font-bold text-slate-800">Driver questions</h1>
+      <p className="mt-1 text-slate-500">Drivers who don't agree with something on their payslip. Answer once – they see it on their phone.</p>
 
       <div className="mt-6 flex gap-2">
         {(["open", "answered"] as const).map((t) => (
@@ -51,7 +51,7 @@ export default function DisputesPage() {
       {!inbox && <p className="mt-6 text-slate-500">Loading…</p>}
       {inbox && inbox.items.length === 0 && (
         <p className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-slate-500">
-          {tab === "open" ? "No disputes waiting. 🎉" : "No answered disputes yet."}
+          {tab === "open" ? "Nothing waiting. Every driver has an answer." : "No answered questions yet."}
         </p>
       )}
       <div className="mt-6 grid gap-4">
@@ -111,7 +111,7 @@ function DisputeCard({ d, canAnswer, aiEnabled, onDone }: { d: InboxDispute; can
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link to={`/drivers/${d.driver_id}`} className="font-bold text-slate-800 hover:text-indigo-700">
+          <Link to={`/drivers/${d.driver_id}`} className="font-semibold text-slate-800 hover:text-indigo-700">
             {d.driver_name}
           </Link>
           <span className="ml-2 text-xs text-slate-400">{d.driver_id} · {d.station}</span>
@@ -179,13 +179,13 @@ function DisputeCard({ d, canAnswer, aiEnabled, onDone }: { d: InboxDispute; can
                 disabled={busy !== ""}
                 className="rounded-lg border border-violet-300 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
               >
-                {busy === "draft" ? "AI is writing…" : "✨ Draft reply with AI"}
+                {busy === "draft" ? "Writing…" : "Write a draft"}
               </button>
             )}
             <button
               onClick={send}
               disabled={busy !== "" || reply.trim().length < 5}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               {busy === "send" ? "Sending…" : "Send answer to driver"}
             </button>

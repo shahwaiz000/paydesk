@@ -57,19 +57,18 @@ export default function ReviewPanel({ monthId, aiSummary, aiSummaryAt, onOpen, o
     <div className="mt-4 space-y-6">
       {aiEnabled === false && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          AI is off: add <code className="font-mono">GEMINI_API_KEY</code> to <code className="font-mono">backend/.env</code> and
-          restart the backend. The rule-based reasons below still work without it.
+          Automatic explanations are switched off right now. The simple reasons below still work.
         </div>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {/* AI month summary */}
-      <div className="rounded-2xl border border-violet-200 bg-violet-50/50 p-5">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h3 className="font-semibold text-slate-800">✨ Month summary for the finance manager</h3>
+            <h3 className="font-bold text-slate-800">Month summary for the finance manager</h3>
             <p className="text-xs text-slate-500">
-              Written by Gemini from the totals only – no names or IBANs are sent.
+              Written automatically from the totals only – no names or bank details are used.
               {aiSummaryAt && ` Last written ${new Date(aiSummaryAt).toLocaleString()}.`}
             </p>
           </div>
@@ -81,14 +80,14 @@ export default function ReviewPanel({ monthId, aiSummary, aiSummaryAt, onOpen, o
       </div>
 
       {/* Unusual salaries */}
-      <div className="rounded-2xl border border-slate-200 bg-white">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-4 border-b border-slate-100 p-5">
           <div>
-            <h3 className="font-semibold text-slate-800">{rows.length} salaries changed more than 30% since last month</h3>
+            <h3 className="font-bold text-slate-800">{rows.length} salaries changed more than 30% since last month</h3>
             <p className="text-xs text-slate-500">Check these before approving. Click a row to open the payslip.</p>
           </div>
           <button disabled={!aiEnabled || busy !== "" || rows.length === 0} onClick={() => run("explain")} className={aiButton}>
-            {busy === "explain" ? "Explaining…" : "✨ Explain with AI"}
+            {busy === "explain" ? "Explaining…" : "Explain"}
           </button>
         </div>
         {rows.length === 0 && (
@@ -111,7 +110,7 @@ export default function ReviewPanel({ monthId, aiSummary, aiSummaryAt, onOpen, o
                     <b className={up ? "text-emerald-700" : "text-red-600"}>{sar(r.net)} SAR</b>
                   </span>
                 </div>
-                {r.ai_reason && <p className="mt-1 text-sm text-violet-800">✨ {r.ai_reason}</p>}
+                {r.ai_reason && <p className="mt-1 text-sm text-slate-600">{r.ai_reason}</p>}
                 {r.change_reason && <p className="mt-1 text-xs text-slate-500">{r.change_reason}</p>}
               </button>
             );

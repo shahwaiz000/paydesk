@@ -86,7 +86,7 @@ export default function MonthPage() {
         {(month.status === "ready" || month.status === "calculated") && (
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
-              {month.status === "ready" ? "✓ All files clean – ready to calculate" : "✓ Salaries calculated"}
+              {month.status === "ready" ? "All files are clean – ready to calculate" : "Salaries calculated"}
             </span>
             {user?.role === "accountant" && (
               <button

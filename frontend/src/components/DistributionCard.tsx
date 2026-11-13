@@ -50,20 +50,20 @@ export default function DistributionCard({ monthId, refreshKey }: { monthId: num
 
   const headline =
     run.status === "running"
-      ? `n8n is sending… ${box.delivered} of ${total} stations`
+      ? `Sending… ${box.delivered} of ${total} stations`
       : done
-        ? `✓ ${box.delivered} of ${total} station emails sent by n8n${run.seconds != null ? ` in ${run.seconds} s` : ""}`
+        ? `${box.delivered} of ${total} station emails sent${run.seconds != null ? ` in ${run.seconds} seconds` : ""}`
         : run.status === "failed"
-          ? `${box.delivered} of ${total} sent – the automation stopped`
+          ? `${box.delivered} of ${total} sent – sending stopped`
           : run.status === "not_connected"
-            ? "n8n is not connected yet – emails are prepared and waiting"
+            ? "Emails are ready and waiting to be sent"
             : `${total} station emails prepared`;
 
   return (
-    <div className={`mt-6 rounded-2xl border p-5 shadow-sm ${done ? "border-emerald-200 bg-emerald-50/40" : "border-indigo-200 bg-white"}`}>
+    <div className={`mt-6 rounded-2xl border p-5 ${done ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200 bg-white"}`}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">🤖 Automation 1 · n8n + Gemini + Gmail</p>
+          <p className="text-xs font-medium text-slate-500">Sent automatically after approval · English and Arabic</p>
           <h2 className="text-lg font-bold text-slate-800">Station salary emails</h2>
           <p className="text-sm text-slate-600">{headline}</p>
           {run.started_at && (
@@ -78,7 +78,7 @@ export default function DistributionCard({ monthId, refreshKey }: { monthId: num
         </div>
         <div className="text-right">
           <p className="text-xs text-slate-500">Cash at stations</p>
-          <p className="text-xl font-bold text-slate-800">SAR {sar(box.cash_total)}</p>
+          <p className="text-xl font-semibold text-slate-800">SAR {sar(box.cash_total)}</p>
           <p className="text-xs text-slate-500">Bank {sar(box.bank_total)}</p>
         </div>
       </div>
@@ -96,9 +96,9 @@ export default function DistributionCard({ monthId, refreshKey }: { monthId: num
           <button
             onClick={runAgain}
             disabled={busy}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {busy ? "Starting…" : run.status ? `Run again (${box.waiting} not sent)` : "Start automation"}
+            {busy ? "Starting…" : run.status ? `Run again (${box.waiting} not sent)` : "Send emails"}
           </button>
         )}
         {box.prepared > 0 && (
@@ -106,7 +106,7 @@ export default function DistributionCard({ monthId, refreshKey }: { monthId: num
             to={`/months/${monthId}/outbox`}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            Open Outbox →
+            See all emails
           </Link>
         )}
       </div>

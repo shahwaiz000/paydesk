@@ -1,0 +1,336 @@
+{
+  "name": "PayDesk · 02 Telegram salary messages (EN + Arabic)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 1 · PayDesk calls this after all station emails are sent (automation 1)",
+        "height": 380,
+        "width": 700,
+        "color": 7
+      },
+      "id": "889998d5-c8ed-415e-8b1e-812db5d4f153",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "paydesk-salary-messages",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "aff91fa5-9197-49fc-8398-b5a1ea08759c",
+      "name": "Salary messages start",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "776daf23-8055-4e73-a7d7-93a56073a582"
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/telegram/bot",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "584e45c0-7331-4257-b49a-6a4798901585",
+      "name": "PayDesk: bot info",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/months/{{ $('Salary messages start').first().json.body.month_id }}/telegram-salary-messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "d9352f37-993d-48d8-a202-c51e99c65820",
+      "name": "PayDesk: salary messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per linked driver who has not got this month's salary message yet.\nreturn ($input.first().json.messages || []).map((m) => ({ json: m }));\n"
+      },
+      "id": "75b41b1d-0374-46d1-a683-26eff5b2bd26",
+      "name": "Split salary messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2 · Gemini writes the Arabic for every driver",
+        "height": 380,
+        "width": 660,
+        "color": 5
+      },
+      "id": "0e938699-084a-45c8-8eee-72e6ed0f554e",
+      "name": "Note 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        700,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Gemini writes the Arabic version of this driver's salary message.\nconst prompt = `Translate this salary message for a delivery driver in Saudi Arabia into clear, simple Arabic\n(Modern Standard Arabic). Keep every number, \"SAR\", reference code, date and emoji exactly the same.\nKeep the same lines and bullet points. Plain text only - no markdown. Reply with the Arabic text only.\n\n${$json.text_en}`;\nreturn { json: { request: {\n  contents: [{ role: \"user\", parts: [{ text: prompt }] }],\n  generationConfig: { temperature: 0.1, maxOutputTokens: 1200 },\n} } };\n"
+      },
+      "id": "6478bce2-e443-4191-baf4-98d757f7c890",
+      "name": "Arabic prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4aa4b4c7-c7e1-4498-bcc0-b592ac95198d",
+      "name": "Gemini: Arabic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// English + Arabic in one Telegram message, with the \"❌ Wrong\" buttons.\n// If Gemini failed, the driver still gets the English message.\nconst m = $('Split salary messages').item.json;\nlet ar = null;\ntry { ar = $json.candidates[0].content.parts.map((p) => p.text || \"\").join(\"\").trim(); } catch (e) { ar = null; }\nconst text = ar ? `${m.text_en}\\n\\n— بالعربية —\\n\\n${ar.replace(/\\*\\*/g, \"\")}` : m.text_en;\nreturn { json: { driver_id: m.driver_id, arabic: !!ar,\n                 telegram: { chat_id: m.telegram.chat_id, text: text.slice(0, 4000),\n                             reply_markup: m.telegram.reply_markup } } };\n"
+      },
+      "id": "ada0dec3-e8d4-4977-9168-b8d0d84be1d5",
+      "name": "Build message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3 · Send on Telegram + tell PayDesk",
+        "height": 380,
+        "width": 880,
+        "color": 4
+      },
+      "id": "f1068c5b-6828-4578-b311-a59e5f43938e",
+      "name": "Note 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('PayDesk: bot info').first().json.api }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.telegram) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "7f64b03a-acb3-4aa9-b2ad-e640c448f61c",
+      "name": "Telegram: send salary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Did Telegram accept it? -> report to PayDesk (sent messages are never sent twice).\nconst b = $('Build message').item.json;\nconst ok = $json.ok === true;\nreturn { json: { driver_id: b.driver_id, status: ok ? \"sent\" : \"failed\",\n                 note: ok ? null : String($json.description || $json.error?.message || \"Telegram error\").slice(0, 400) } };\n"
+      },
+      "id": "ae0c9c09-432a-4d40-b2b0-6f1d8460d6b2",
+      "name": "Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8001/api/automation/months/{{ $('Salary messages start').first().json.body.month_id }}/telegram-salary-messages/{{ $json.driver_id }}/result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, note: $json.note }) }}"
+      },
+      "id": "16abb536-ea18-45f5-96b2-b99b7a3dfe50",
+      "name": "PayDesk: report result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Salary messages start": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: bot info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PayDesk: bot info": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: salary messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PayDesk: salary messages": {
+      "main": [
+        [
+          {
+            "node": "Split salary messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split salary messages": {
+      "main": [
+        [
+          {
+            "node": "Arabic prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arabic prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini: Arabic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini: Arabic": {
+      "main": [
+        [
+          {
+            "node": "Build message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build message": {
+      "main": [
+        [
+          {
+            "node": "Telegram: send salary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: send salary": {
+      "main": [
+        [
+          {
+            "node": "Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: report result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

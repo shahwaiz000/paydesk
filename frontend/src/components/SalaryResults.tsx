@@ -55,7 +55,7 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-slate-800">{value}</p>
+      <p className="mt-1 text-xl font-semibold tracking-tight text-slate-800 lg:text-2xl">{value}</p>
       {sub && <p className="text-xs text-slate-400">{sub}</p>}
     </div>
   );
@@ -153,7 +153,7 @@ export default function SalaryResults({ monthId, refreshKey }: { monthId: number
       )}
 
       {tab === "stations" && (
-        <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr><th className="p-3">Station</th><th>Drivers</th><th>Cash drivers</th><th className="text-right">Cash needed</th><th className="p-3 text-right">Total net</th></tr>
@@ -197,7 +197,7 @@ export default function SalaryResults({ monthId, refreshKey }: { monthId: number
             </select>
           </div>
 
-          <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                 <tr>

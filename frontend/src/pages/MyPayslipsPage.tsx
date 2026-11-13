@@ -41,7 +41,7 @@ export default function MyPayslipsPage() {
             <span className="text-sm text-indigo-100">{monthLabel(latest.period)}</span>
             <StatusBadge final={latest.final} light />
           </div>
-          <p className="mt-2 text-4xl font-bold">SAR {sar(latest.net)}</p>
+          <p className="mt-2 text-4xl font-semibold">SAR {sar(latest.net)}</p>
           <p className="mt-2 text-sm text-indigo-100">
             Earned {sar(latest.gross)} · Deducted {sar(latest.deductions)} · {latest.deliveries} deliveries in{" "}
             {latest.days_worked} days
@@ -56,7 +56,7 @@ export default function MyPayslipsPage() {
       {older.length > 0 && (
         <>
           <h2 className="mt-8 text-lg font-bold text-slate-800">Past months</h2>
-          <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+          <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
             {older.map((m) => (
               <Link
                 key={m.month_id}

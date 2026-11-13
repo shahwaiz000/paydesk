@@ -62,7 +62,7 @@ export default function MonthsPage() {
             className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-indigo-300"
           >
             <div>
-              <p className="text-lg font-semibold text-slate-800">{monthLabel(m.period)}</p>
+              <p className="text-lg font-bold text-slate-800">{monthLabel(m.period)}</p>
               <p className="text-sm text-slate-500">{m.files_imported} of 4 files imported</p>
             </div>
             <span className={`rounded-full px-3 py-1 text-sm font-medium ${MONTH_STATUS[m.status]?.style ?? ""}`}>

@@ -9,6 +9,7 @@ import MonthPage from "./pages/MonthPage";
 import MonthsPage from "./pages/MonthsPage";
 import MyPayslipPage from "./pages/MyPayslipPage";
 import OutboxPage from "./pages/OutboxPage";
+import PaydayPage from "./pages/PaydayPage";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/drivers" element={<DriversPage />} />
         <Route path="/drivers/:id" element={<DriverPage />} />
         <Route path="/disputes" element={<DisputesPage />} />
+        <Route path="/payday" element={<PaydayPage />} />
         <Route path="/payslips/:monthId" element={<MyPayslipPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

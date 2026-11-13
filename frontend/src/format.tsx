@@ -22,7 +22,7 @@ export function StatusBadge({ final, light }: { final: boolean; light?: boolean 
   if (final) {
     return (
       <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${light ? "bg-white/20 text-white" : "bg-emerald-50 text-emerald-700"}`}>
-        ✓ Final
+        Final
       </span>
     );
   }

@@ -42,7 +42,7 @@ export default function PayslipModal({ monthId, driverId, onClose }: { monthId: 
               </p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100">✕</button>
+          <button onClick={onClose} className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100"aria-label="Close">✕</button>
         </div>
 
         {error && <p className="mt-4 text-red-600">{error}</p>}
@@ -95,7 +95,7 @@ export default function PayslipModal({ monthId, driverId, onClose }: { monthId: 
 
             <div className="mt-4 flex items-center justify-between rounded-xl bg-indigo-600 p-4 text-white">
               <span className="font-semibold">Net salary</span>
-              <span className="text-2xl font-bold">SAR {sar(p.net)}</span>
+              <span className="text-2xl font-semibold">SAR {sar(p.net)}</span>
             </div>
             {p.carried_forward > 0 && (
               <p className="mt-2 text-sm text-amber-700">SAR {sar(p.carried_forward)} will be deducted next month.</p>

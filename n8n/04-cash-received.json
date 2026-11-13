@@ -1,0 +1,446 @@
+{
+  "name": "PayDesk · 04 Cash received? (Telegram + Gmail)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 1 · Every 10 s: cashier marked a driver PAID → ask the driver on Telegram\n(✅ / ❌ taps are answered by workflow 03)",
+        "height": 380,
+        "width": 1360,
+        "color": 4
+      },
+      "id": "33d32f77-7214-4145-b52d-1a6710673efd",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "826ed449-f040-4821-adc2-b78de3270cf9",
+      "name": "Every 10 seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/telegram/bot",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "2286f511-3fad-47cd-9e22-0939838784b1",
+      "name": "PayDesk: bot info",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/cash/to-ask",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "49d63910-5721-4b17-bc65-3cc48a7d6c30",
+      "name": "PayDesk: drivers to ask",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per driver to ask: \"did you receive your cash?\" (or ONE reminder after 24 h).\nreturn ($input.first().json.messages || []).map((m) => ({ json: m }));\n"
+      },
+      "id": "810c31c9-df4d-4bef-8f36-eca0575c9254",
+      "name": "Split questions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('PayDesk: bot info').first().json.api }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Split questions').item.json.telegram) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "d48f0b78-6a1b-428f-912c-256d8e21f22d",
+      "name": "Telegram: did you get your cash?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8001/api/automation/cash/{{ $('Split questions').item.json.payment_id }}/asked",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ kind: $('Split questions').item.json.kind, ok: $json.ok === true }) }}"
+      },
+      "id": "0395364f-4b0f-46f9-9a7a-0a900f3a9ec3",
+      "name": "PayDesk: mark asked",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2 · Driver said WRONG AMOUNT → email the accountant right away",
+        "height": 260,
+        "width": 960,
+        "color": 3
+      },
+      "id": "fa228558-059a-4d6a-8a6c-8d010eb9c2f9",
+      "name": "Note 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/cash/alerts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "3ab167c9-496f-431b-aab8-4cddb8c611dd",
+      "name": "PayDesk: wrong-amount alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Drivers who said \"wrong amount\" -> one email each to the accountant.\nconst d = $input.first().json;\nconst money = (x) => Number(x).toLocaleString(\"en-US\", { maximumFractionDigits: 2 });\nconst esc = (s) => String(s ?? \"\").replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\nreturn (d.alerts || []).map((a) => ({ json: {\n  payment_id: a.payment_id, to: d.notify_to,\n  subject: `⚠️ Cash problem: ${a.driver_id} at ${a.station_code} says he got ${a.said_amount != null ? \"SAR \" + money(a.said_amount) : \"a different amount\"}`,\n  html: `<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#1e293b\">\n<h2 style=\"margin:0 0 8px\">Driver says the cash amount is wrong</h2>\n<p><b>${esc(a.driver_id)} · ${esc(a.driver_name)}</b> – ${esc(a.station_code)} ${esc(a.station)} – ${esc(a.month_name)}</p>\n<ul><li>Cashier <b>${esc(a.paid_by)}</b> marked him paid: <b>SAR ${money(a.amount)}</b></li>\n<li>Driver says he received: <b>${a.said_amount != null ? \"SAR \" + money(a.said_amount) : \"not stated\"}</b>${a.difference != null ? ` (difference SAR ${money(a.difference)})` : \"\"}</li>\n<li>Driver's note: “${esc(a.note)}”</li></ul>\n<p>Please check with the station cashier. The driver was told the payroll team will answer him.</p>\n<p style=\"color:#64748b;font-size:12px\">Sent by n8n – PayDesk automation 3 (driver answered on Telegram)</p></div>` } }));\n"
+      },
+      "id": "e74abb26-c103-4698-b562-bb17765643d1",
+      "name": "Split alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "82c4a954-3427-4854-919a-202863fb6706",
+      "name": "Gmail: alert accountant",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        620
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Pxr2gspwgYb2UkBY",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8001/api/automation/cash/{{ $('Split alerts').item.json.payment_id }}/alerted",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "2d6d9b4b-93d8-4632-93ce-69322d63f787",
+      "name": "PayDesk: mark alerted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3 · Every evening at 8 pm: payday summary email to the accountant",
+        "height": 260,
+        "width": 960,
+        "color": 5
+      },
+      "id": "633d4dde-4b77-48c2-ae06-58613a9c5e0f",
+      "name": "Note 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 20
+            }
+          ]
+        }
+      },
+      "id": "190a078d-3a74-409b-956d-1f9d5630732d",
+      "name": "Every evening 8 pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:8001/api/automation/cash/summary",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "34a80fa0-1edc-40bc-9cd2-c20cc7826e9e",
+      "name": "PayDesk: payday summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Evening summary: how far is payday? Nothing to send if no month is approved.\nconst d = $input.first().json;\nif (!d.month) return [];\nconst t = d.totals;\nconst money = (x) => Number(x).toLocaleString(\"en-US\", { maximumFractionDigits: 2 });\nconst esc = (s) => String(s ?? \"\").replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\nconst li = (arr, f) => arr.length ? \"<ul>\" + arr.slice(0, 15).map(f).join(\"\") + (arr.length > 15 ? `<li>… and ${arr.length - 15} more</li>` : \"\") + \"</ul>\" : \"<p>None ✅</p>\";\nconst html = `<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#1e293b\">\n<h2 style=\"margin:0 0 8px\">Payday ${esc(d.month.month_name)} – end of day</h2>\n<p><b>${d.stations_all_paid} of ${d.stations}</b> stations paid all cash drivers ·\n<b>${t.paid} of ${t.drivers}</b> drivers paid (SAR ${money(t.paid_amount)} of ${money(t.cash)})</p>\n<ul><li>✅ Confirmed by driver on Telegram: <b>${t.confirmed}</b></li>\n<li>⏳ Waiting for driver's answer: <b>${t.waiting}</b></li>\n<li>❌ Driver says wrong amount: <b style=\"color:${t.wrong ? \"#b91c1c\" : \"inherit\"}\">${t.wrong}</b></li>\n<li>Paid, driver not on Telegram: ${t.no_telegram}</li></ul>\n<h3 style=\"margin:16px 0 4px\">❌ Wrong amount</h3>\n${li(d.problems, (p) => `<li><b>${esc(p.driver_id)}</b> ${esc(p.station_code)} – paid SAR ${money(p.net)}, driver says ${p.said_amount != null ? \"SAR \" + money(p.said_amount) : \"different\"}${p.note ? ` – “${esc(p.note)}”` : \"\"}</li>`)}\n<h3 style=\"margin:16px 0 4px\">Stations not started</h3>\n${li(d.stations_not_started, (s) => `<li>${esc(s.station_code)} ${esc(s.station)} – ${s.drivers} drivers, SAR ${money(s.cash)}</li>`)}\n<h3 style=\"margin:16px 0 4px\">Stations partly paid</h3>\n${li(d.stations_partly_paid, (s) => `<li>${esc(s.station_code)} ${esc(s.station)} – ${s.paid}/${s.drivers} paid</li>`)}\n<p><a href=\"${d.payday_url}\">Open Payday in PayDesk</a></p>\n<p style=\"color:#64748b;font-size:12px\">Sent by n8n – PayDesk automation 3. No paper signature sheets needed.</p></div>`;\nreturn [{ json: { to: d.notify_to, html,\n  subject: `PayDesk payday ${d.month.month_name}: ${d.stations_all_paid}/${d.stations} stations paid · ${t.confirmed} confirmed · ${t.wrong} wrong amount` } }];\n"
+      },
+      "id": "cc62ec16-9743-4b5a-974a-f72b4fca2980",
+      "name": "Build summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4c2c524d-59d7-44fd-8bfb-860c75c73491",
+      "name": "Gmail: payday summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        940
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Pxr2gspwgYb2UkBY",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 10 seconds": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: bot info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PayDesk: bot info": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: drivers to ask",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "PayDesk: wrong-amount alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PayDesk: drivers to ask": {
+      "main": [
+        [
+          {
+            "node": "Split questions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split questions": {
+      "main": [
+        [
+          {
+            "node": "Telegram: did you get your cash?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: did you get your cash?": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: mark asked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PayDesk: wrong-amount alerts": {
+      "main": [
+        [
+          {
+            "node": "Split alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split alerts": {
+      "main": [
+        [
+          {
+            "node": "Gmail: alert accountant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: alert accountant": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: mark alerted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every evening 8 pm": {
+      "main": [
+        [
+          {
+            "node": "PayDesk: payday summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PayDesk: payday summary": {
+      "main": [
+        [
+          {
+            "node": "Build summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build summary": {
+      "main": [
+        [
+          {
+            "node": "Gmail: payday summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "timezone": "Asia/Riyadh"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

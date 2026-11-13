@@ -15,7 +15,7 @@ export function DisputeStatus({ d }: { d: Dispute }) {
   const agreed = d.status === "accepted";
   return (
     <div className={`mt-2 rounded-lg p-3 text-xs ${agreed ? "bg-emerald-50 text-emerald-900" : "bg-slate-100 text-slate-700"}`}>
-      <b>{agreed ? "✓ Payroll team agreed" : "Payroll team checked – it stays"}</b>
+      <b>{agreed ? "The payroll team agreed" : "Payroll team checked – it stays"}</b>
       {d.deduction_removed && <span className="ml-1">· this deduction is being removed</span>}
       <p className="mt-1 whitespace-pre-line">{d.reply}</p>
       <p className="mt-1 opacity-70">You wrote: “{d.message}”</p>

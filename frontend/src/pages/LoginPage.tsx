@@ -5,8 +5,8 @@ import { useAuth } from "../auth";
 const DEMO_ACCOUNTS = [
   { label: "Payroll Accountant", username: "accountant", password: "demo123" },
   { label: "Finance Manager", username: "manager", password: "demo123" },
-  { label: "Cashier – Riyadh Azizia", username: "ruh-01", password: "demo123" },
-  { label: "Driver D10001", username: "d10001", password: "1234" },
+  { label: "Station Cashier – Riyadh Azizia", username: "ruh-01", password: "demo123" },
+  { label: "Driver – D10001", username: "d10001", password: "1234" },
 ];
 
 export default function LoginPage() {
@@ -32,79 +32,71 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-slate-50">
-      {/* Brand side */}
-      <div className="hidden lg:flex flex-col justify-between bg-indigo-700 text-white p-12">
-        <div className="text-2xl font-bold tracking-tight">PayDesk</div>
-        <div>
-          <h1 className="text-4xl font-bold leading-tight">
-            Driver payroll,
-            <br />
-            from file upload to signed receipt.
-          </h1>
-          <p className="mt-4 text-indigo-100 max-w-md">
-            Calculate 750 salaries, send every station its list in one click, and let drivers see
-            exactly why every riyal was paid or deducted.
-          </p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#f4f6f9] px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-xl font-bold text-white shadow-md">P</span>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-slate-800">PayDesk</p>
+          <p className="mt-0.5 text-sm text-slate-500">Driver Payroll System</p>
         </div>
-        <p className="text-sm text-indigo-200">Demo build · fake data only</p>
-      </div>
 
-      {/* Form side */}
-      <div className="flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">
-          <h2 className="text-2xl font-bold text-slate-800">Sign in</h2>
-          <p className="text-slate-500 mt-1 text-sm">Drivers: use your driver ID and PIN.</p>
-
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+          <h1 className="text-xl font-bold text-slate-800">Sign in to your account</h1>
+          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Username or driver ID</label>
+              <label htmlFor="username" className="block text-sm font-medium text-slate-700">Username or driver ID</label>
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                id="username"
+                autoComplete="username"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoFocus
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Password or PIN</label>
+              <label htmlFor="password" className="block text-sm font-medium text-slate-700">Password or PIN</label>
               <input
+                id="password"
                 type="password"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                autoComplete="current-password"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
             <button
               type="submit"
               disabled={busy || !username || !password}
-              className="w-full rounded-lg bg-indigo-600 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               {busy ? "Signing in…" : "Sign in"}
             </button>
           </form>
+        </div>
 
-          <div className="mt-8 rounded-xl border border-dashed border-slate-300 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Demo accounts</p>
-            <div className="mt-2 space-y-1">
-              {DEMO_ACCOUNTS.map((a) => (
-                <button
-                  key={a.username}
-                  type="button"
-                  onClick={() => {
-                    setUsername(a.username);
-                    setPassword(a.password);
-                  }}
-                  className="flex w-full justify-between rounded-md px-2 py-1.5 text-sm hover:bg-slate-100"
-                >
-                  <span className="text-slate-700">{a.label}</span>
-                  <span className="font-mono text-slate-400">{a.username}</span>
-                </button>
-              ))}
-            </div>
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Demo accounts</p>
+          <div className="mt-2 divide-y divide-slate-100">
+            {DEMO_ACCOUNTS.map((a) => (
+              <button
+                key={a.username}
+                type="button"
+                onClick={() => {
+                  setUsername(a.username);
+                  setPassword(a.password);
+                  setError("");
+                }}
+                className="flex w-full items-center justify-between py-2.5 text-left text-sm font-medium hover:text-indigo-600"
+              >
+                <span className="text-slate-700">{a.label}</span>
+                <span className="font-mono text-xs text-slate-400">{a.username}</span>
+              </button>
+            ))}
           </div>
         </div>
+        <p className="mt-4 text-center text-xs text-slate-400">Demo version · sample data only</p>
       </div>
     </div>
   );

@@ -68,7 +68,7 @@ export default function DriversPage() {
 
       {error && <p className="mt-4 text-red-600">{error}</p>}
 
-      <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>

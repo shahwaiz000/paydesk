@@ -72,7 +72,7 @@ export default function FinesCard({ monthId, onAdded }: { monthId: number; onAdd
     <div className="mt-8 rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-800">✨ Traffic fines from documents</h2>
+          <h2 className="text-lg font-bold text-slate-800">Traffic fines from documents</h2>
           <p className="text-sm text-slate-500">
             Upload fine notices (PDF or photo). AI reads plate, date, amount and fine number – PayDesk finds who drove
             that vehicle that day. You confirm before anything is added.

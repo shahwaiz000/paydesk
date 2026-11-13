@@ -11,7 +11,7 @@ const BADGE: Record<OutboxEmail["status"], string> = {
   failed: "bg-red-100 text-red-700",
   prepared: "bg-slate-100 text-slate-600",
 };
-const LABEL: Record<OutboxEmail["status"], string> = { sent: "✓ Sent", failed: "Failed", prepared: "Waiting" };
+const LABEL: Record<OutboxEmail["status"], string> = { sent: "Sent", failed: "Failed", prepared: "Waiting" };
 
 function when(iso: string | null): string {
   if (!iso) return "";
@@ -58,15 +58,15 @@ export default function OutboxPage() {
       <Link to={`/months/${id}`} className="text-sm text-indigo-600 hover:underline">← {monthLabel(box.period)}</Link>
       <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Outbox · {monthLabel(box.period)}</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Station emails · {monthLabel(box.period)}</h1>
           <p className="mt-1 text-slate-500">
-            {box.delivered} of {box.prepared} sent by n8n
+            {box.delivered} of {box.prepared} sent
             {box.failed > 0 ? ` · ${box.failed} failed` : ""}
             {box.run.seconds != null ? ` · ${box.run.seconds} s` : ""} · cash SAR {sar(box.cash_total)} · bank SAR{" "}
             {sar(box.bank_total)}
           </p>
           <p className="mt-1 text-xs text-amber-700">
-            Demo: n8n sends every email to {box.demo_inbox ?? "your demo inbox"} – the station address is only shown inside.
+            Demo: every email goes to {box.demo_inbox ?? "the demo inbox"}, never to a real station.
           </p>
         </div>
         <input
@@ -84,7 +84,7 @@ export default function OutboxPage() {
       ) : (
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.2fr]">
           {/* List */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <ul className="max-h-[70vh] divide-y divide-slate-100 overflow-y-auto">
               {emails.map((e) => (
                 <li key={e.id}>
@@ -109,7 +109,7 @@ export default function OutboxPage() {
           </div>
 
           {/* Preview */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
             {!open ? (
               <p className="text-slate-500">Click a station to read its email.</p>
             ) : (
@@ -120,17 +120,17 @@ export default function OutboxPage() {
                   onClick={() => download(open)}
                   className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
                 >
-                  📎 {open.attachment_name}
+                  {open.attachment_name}
                 </button>
                 <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE[open.status]}`}>{LABEL[open.status]}</span>
                   {open.status === "sent" && (
                     <span className="ml-2 text-slate-600">
-                      n8n sent it to {open.delivered_to} · {when(open.delivered_at)}
+                      Sent to {open.delivered_to} · {when(open.delivered_at)}
                     </span>
                   )}
                   {open.status === "failed" && <span className="ml-2 text-red-700">{open.delivery_note}</span>}
-                  {open.status === "prepared" && <span className="ml-2 text-slate-500">Waiting for n8n</span>}
+                  {open.status === "prepared" && <span className="ml-2 text-slate-500">Waiting to be sent</span>}
                 </div>
                 <pre className="mt-4 overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 font-mono text-xs leading-relaxed text-slate-700">
                   {open.body}

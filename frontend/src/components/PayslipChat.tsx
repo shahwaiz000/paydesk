@@ -50,7 +50,7 @@ export default function PayslipChat({ monthId, enabled }: { monthId: number; ena
 
   return (
     <div className="mt-6 rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-slate-800">✨ Why is my salary this?</h2>
+      <h2 className="text-lg font-bold text-slate-800">Ask about your salary</h2>
       <p className="text-sm text-slate-500">Ask about this payslip. The assistant only sees your own salary for this month.</p>
 
       {!enabled && (

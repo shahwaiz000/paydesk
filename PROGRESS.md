@@ -68,7 +68,7 @@
 - **Fixes:**
   - new columns are added to the database automatically on startup
   - the demo database (`paydesk-demo.db`) is now the default
-- **Tests:** 25 passing (`pytest`)
+- **Tests:** 26 passing (`pytest`)
 - **Automation 1 – station emails (n8n + Gemini + Gmail):** built 12 Nov, see "Where we stopped"
 
 ## Where we stopped (13 Nov 2026)
@@ -91,8 +91,57 @@
   - Demo video: record at the end of the project (fresh demo database, empty demo inbox, one clean run)
 - Google Cloud project "Invoice Autopilot" is now **In production** (13 Nov) and Gmail + Sheets were reconnected in n8n
   → sign-ins no longer expire every 7 days. (Gemini key change still to do later.)
-- **Next action:** build automation 2 "Why was my salary cut?" (design agreed 13 Nov – see below).
-  First step for Shahwaiz: Telegram → @BotFather → `/newbot` → "PayDesk Demo Bot" → keep the token private (goes into n8n).
+- **Automation 2 – PayDesk side built (14 Nov, 26 tests passing):**
+  - Telegram bot made: **@paydesk_demo_shahwaiz_bot** (token kept private by Shahwaiz – goes only into n8n)
+  - new tables: `telegram_links` (chat ↔ driver), `telegram_notices` (salary message sent, once per month),
+    `automation_state` (Telegram offset); disputes got `source` (web/telegram) + `telegram_sent_at`
+  - new file `backend/app/routers/telegram.py` – all endpoints n8n needs (see the top of that file)
+  - bot commands: `/start`, `/link D10001 1234` (PIN message deleted, 5 wrong tries/hour), `/salary`, `/wrong`,
+    `/cancel`, `/unlink`, `/help`; any other text = question → n8n asks Gemini (20 questions/hour)
+  - "❌ Wrong" button under each deduction → bot asks the reason → dispute opens in PayDesk (source telegram)
+  - accountant's answer → `GET /api/automation/telegram/answers` → n8n sends it on Telegram
+  - after automation 1 finishes ("done"), PayDesk calls `N8N_SALARY_MESSAGES_URL` (new optional `.env` line)
+  - tests no longer read the real `backend\.env` (they had called the real n8n) – `tests/conftest.py` blanks it
+  - bot token lives ONLY in `backend\.env` as `TELEGRAM_BOT_TOKEN=...`; n8n gets it from `GET /api/automation/telegram/bot`
+- **Automation 2 WORKS end to end (tested 14 Nov ~01:50 on Shahwaiz's own Telegram):**
+  /start → /link D10001 1234 (PIN message deleted) → /salary → ❌ Wrong → reason → dispute in PayDesk (source telegram)
+  → accountant answered in PayDesk → answer arrived on Telegram within seconds. Gemini answers questions (EN + Arabic).
+  - n8n: "PayDesk · 03 Telegram salary bot" **published** (every 3 s, only failed runs saved)
+  - n8n: "PayDesk · 02 Telegram salary messages" imported + credentials set, **NOT published yet** – publish it
+    before the full demo run (it starts after automation 1 finishes)
+  - `.env` has `TELEGRAM_BOT_TOKEN` (new token after /revoke) + `N8N_SALARY_MESSAGES_URL`
+  - n8n login was reset on 14 Nov (`npx n8n@2.45.7 user-management:reset`) – new owner password saved in Chrome
+  - Note: after tapping ❌ Wrong, the NEXT message is saved as the reason (send /cancel to stop)
+- **14 Nov ~02:10 decision:** the post must stay simple – 3 clear problems only. Data-collection idea DROPPED.
+  **Automation 3 = "Did the driver get his cash?"** (replaces paper signature sheets; Shahwaiz's own original wish).
+- **Automation 3 WORKS end to end (tested 14 Nov ~02:20):** ruh-01 → Payday → Paid D10001 → Telegram question →
+  ❌ + "1000 – …" → alert email arrived in the demo Gmail. Workflow 04 imported + **published**.
+- Automation 3 details (27 tests passing):
+  - table `cash_payments`; `backend/app/routers/payday.py` (Payday page API + n8n endpoints, see top of file)
+  - frontend: new **Payday** page (`/payday`): cashier clicks **Paid** / "Mark all as paid";
+    accountant sees every station + "wrong amount" problems (page refreshes every 10 s)
+  - bot (workflow 03, no change): buttons `cy:<id>` ✅ received / `cn:<id>` ❌ → "how much did you receive?"
+  - `n8n/04-cash-received.json`: ask driver (10 s) · 1 reminder after 24 h · Gmail alert on wrong amount ·
+    8 pm summary email
+- **Website redesigned (14 Nov ~03:00) – professional business look, looks only (no backend change):**
+  - Shahwaiz did NOT like the Apple-style front page → removed. Opening PayDesk goes straight to sign-in.
+  - normal sign-in page (centered box + demo accounts list)
+  - left-side menu (Dashboard · Payroll months · Payday · Drivers · Driver questions; ☰ on phones)
+  - dashboards per role: every number has a clear label + a short line under it (`components/StatCard.tsx`)
+  - Inter font, white/grey + one blue, no emoji, no technical words on screen
+  - checked with screenshots on laptop + phone; 27 tests pass; frontend builds without errors
+  - then (Shahwaiz's feedback "too thin", "too many numbers", "no dark colors"): WHITE left menu with blue "P" logo,
+    bold headings/numbers; dashboard = one blue banner (month + net) with an AI assistant chat picture +
+    only 3 big cards (station emails · AI driver assistant · cash confirmations); same bold style on all pages
+    and the sign-in page. Shahwaiz: "Now that looks good."
+- **Next action (all 3 automations work):**
+  1. Git save.
+  2. Publish workflow 02 (salary message after automation 1) – then one FULL demo run: fresh demo database →
+     approve October → 50 station emails → salary message on Telegram → question → ❌ Wrong → answer →
+     Payday → Paid → ✅/❌. Record the demo video in that run (empty demo inbox first).
+  3. Write the LinkedIn post (Sunday).
+- **LinkedIn post (Sunday) – 3 problems:** 1) 50 station emails 2–3 h → 74 s · 2) "why was my salary cut?" →
+  AI answers on Telegram · 3) paper signature sheets → drivers confirm cash with one tap.
 
 ## PowerShell windows (numbered in the order you open them)
 - **Window 1 – commands** (`backend` folder): tests, Git, `.env`
@@ -131,8 +180,9 @@ pain Shahwaiz knows from iMile, with a true before → after. No made-up "before
 | # | Real problem | Tool | Status |
 |---|---|---|---|
 | 1 | Sending each station its salary list (2–3 h by hand) | n8n + Gemini + Gmail | ✅ done – 74 s |
-| 2 | Drivers asking "why was my salary cut?" | n8n + Gemini + Telegram | **NEXT – design agreed** |
-| 3 | Chasing 50 cashiers to confirm "paid" + signed sheets | Power Automate | later |
+| 2 | Drivers asking "why was my salary cut?" | n8n + Gemini + Telegram | ✅ done – works on Telegram |
+| 3 | Paper signature sheets – "did the driver get his cash?" | n8n + Telegram + Gmail | ✅ done – works |
+| – | Monthly data collection / chasing cashiers | – | dropped 14 Nov (keep the post simple) |
 | – | Bank salary file (SAB) | ? | only if Shahwaiz learns the real process from the accountant |
 | – | Approval by email | – | dropped (approval already works in PayDesk, not a real pain) |
 

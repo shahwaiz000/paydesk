@@ -67,7 +67,7 @@ export default function ApprovalCard({ monthId, refreshKey, onChanged }: { month
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-800">
-            {a.status === "approved" ? "🔒 Approved & locked" : "Approval"}
+            {a.status === "approved" ? "Approved and locked" : "Approval"}
           </h2>
           <p className="text-sm text-slate-500">
             {a.status === "approved"
@@ -107,7 +107,7 @@ export default function ApprovalCard({ monthId, refreshKey, onChanged }: { month
         <ul className="mt-4 space-y-1.5 text-sm">
           {a.checks.map((c) => (
             <li key={c.key} className="flex gap-2">
-              <span>{c.ok ? "✅" : c.blocking ? "⛔" : "⚠️"}</span>
+              <span>{c.ok ? "✓" : c.blocking ? "✕" : "!"}</span>
               <span className={c.ok ? "text-slate-600" : c.blocking ? "font-medium text-red-700" : "text-amber-800"}>
                 {c.text}
                 {!c.ok && c.approve_only && !forApprove && <span className="text-xs text-slate-400"> (needed before approval)</span>}
