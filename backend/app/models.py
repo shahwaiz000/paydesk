@@ -7,7 +7,9 @@ Later stages add salaries, payments and disputes.
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, func
+from sqlalchemy import (
+    JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -266,6 +268,8 @@ class Dispute(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     answered_at: Mapped[datetime | None] = mapped_column(DateTime)
     answered_by: Mapped[str | None] = mapped_column(String(50))
+    source: Mapped[str] = mapped_column(String(10), default="web")      # web / telegram (automation 2)
+    telegram_sent_at: Mapped[datetime | None] = mapped_column(DateTime)  # answer delivered on Telegram
 
     driver: Mapped[Driver] = relationship()
     station: Mapped[Station] = relationship()
@@ -329,3 +333,48 @@ class OutboxEmail(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     station: Mapped[Station] = relationship()
+
+
+# ------------------------------------------------------------------ Automation 2 (Telegram)
+
+class TelegramLink(Base):
+    """One Telegram chat <-> one driver. The driver links once with /link <driver ID> <PIN>.
+    After that the bot only ever shows him HIS OWN salary."""
+
+    __tablename__ = "telegram_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    driver_id: Mapped[str] = mapped_column(ForeignKey("drivers.id"), unique=True, index=True)
+    linked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    language: Mapped[str] = mapped_column(String(2), default="en")      # en / ar - the last language he wrote in
+    # "This is wrong" was tapped -> the next message is the reason
+    pending_month_id: Mapped[int | None] = mapped_column(Integer)
+    pending_topic: Mapped[str | None] = mapped_column(String(20))
+    pending_line_key: Mapped[str | None] = mapped_column(String(200))
+
+    driver: Mapped[Driver] = relationship()
+
+
+class TelegramNotice(Base):
+    """Salary message sent on Telegram (workflow 02): one per driver per month - never twice."""
+
+    __tablename__ = "telegram_notices"
+    __table_args__ = (UniqueConstraint("month_id", "driver_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month_id: Mapped[int] = mapped_column(ForeignKey("payroll_months.id"), index=True)
+    driver_id: Mapped[str] = mapped_column(ForeignKey("drivers.id"))
+    chat_id: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(10))                     # sent / failed
+    note: Mapped[str | None] = mapped_column(String(400))
+    at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AutomationState(Base):
+    """Small saved values for n8n, e.g. the last Telegram update it has read."""
+
+    __tablename__ = "automation_state"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200))

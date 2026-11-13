@@ -28,6 +28,11 @@ os.environ["DATABASE_URL"] = f"sqlite:///{(TEST_DIR / 'test.db').as_posix()}"
 os.environ["SEED_DEMO_DATA"] = "true"
 os.environ["DEMO_DATA_DIR"] = str(TEST_DIR)
 os.environ["UPLOAD_DIR"] = str(TEST_DIR / "uploads")
+# Tests must NEVER use the real backend\.env values: no real n8n, no real Gemini, no real inbox.
+# (Environment variables win over .env.) Tests that need them set fake values themselves.
+for name in ("N8N_MONTH_APPROVED_URL", "N8N_SALARY_MESSAGES_URL", "AUTOMATION_KEY", "DEMO_INBOX", "GEMINI_API_KEY",
+             "TELEGRAM_BOT_TOKEN"):
+    os.environ[name] = ""
 
 from fastapi.testclient import TestClient  # noqa: E402
 

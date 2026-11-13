@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     automation_key: str = ""
     # Demo safety: n8n sends EVERY station email to this inbox, never to a real station cashier
     demo_inbox: str = ""
+    # Automation 2 (Telegram): PayDesk calls this n8n webhook after the station emails are done,
+    # so every linked driver gets his salary message. Empty = no salary messages.
+    n8n_salary_messages_url: str = ""   # e.g. http://localhost:5678/webhook/paydesk-salary-messages
+    # Token of the Telegram bot (from @BotFather). Only here - never in code, n8n files or Git.
+    telegram_bot_token: str = ""
 
 
 settings = Settings()

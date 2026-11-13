@@ -44,7 +44,7 @@ def dispute_out(d: Dispute, with_driver: bool = True) -> dict:
             "type": d.line_type, "amount": d.line_amount, "day": d.line_day.isoformat() if d.line_day else None,
             "reference": d.line_reference, "note": d.line_note, "carried_from": d.line_carried_from,
         },
-        "message": d.message, "status": d.status, "reply": d.reply,
+        "message": d.message, "status": d.status, "reply": d.reply, "source": d.source or "web",
         "deduction_removed": d.deduction_removed,
         "created_at": utc_iso(d.created_at),
         "answered_at": utc_iso(d.answered_at),

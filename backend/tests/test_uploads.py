@@ -551,3 +551,117 @@ def test_automation_1_with_n8n(client, monkeypatch):
     with SessionLocal() as db:
         m = db.get(PayrollMonth, 1)
         assert m.emails_run_status == "failed" and "Can't reach n8n" in m.emails_run_note
+
+
+
+def test_automation_2_telegram_bot(client, monkeypatch):
+    from app.config import settings
+    from app.routers import automation, telegram
+
+    monkeypatch.setattr(settings, "automation_key", "test-key-123")
+    key = {"X-PayDesk-Key": "test-key-123"}
+    acc = login(client, "accountant", "demo123")
+
+    def say(text=None, chat="555", callback=None, message_id=None):
+        res = client.post("/api/automation/telegram/message", headers=key,
+                          json={"chat_id": chat, "text": text, "callback_data": callback, "message_id": message_id})
+        assert res.status_code == 200, res.text
+        return res.json()
+
+    # Needs the key
+    assert client.post("/api/automation/telegram/message", json={"chat_id": "1", "text": "hi"}).status_code == 401
+
+    # Not linked -> nothing about any salary
+    assert "Welcome" in say("/start")["telegram"]["text"]
+    r = say("why was my salary cut?")
+    assert r["action"] == "reply" and "not linked" in r["telegram"]["text"]
+
+    # Wrong PIN -> refused, and the PIN message is deleted; 5 wrong tries an hour
+    r = say("/link D3 9999", message_id=11)
+    assert "wrong" in r["telegram"]["text"] and r["delete_message_id"] == 11
+    for _ in range(4):
+        say("/link D3 0000")
+    assert "Too many" in say("/link D3 1234")["telegram"]["text"]
+    telegram._bad_links.clear()
+
+    # Right PIN -> linked
+    r = say("/link d3 1234", message_id=12)
+    assert "Linked to driver D3" in r["telegram"]["text"] and r["delete_message_id"] == 12
+
+    # /salary -> rule-based message with a "wrong" button per deduction
+    r = say("/salary")
+    text = r["telegram"]["text"]
+    assert "Net salary: SAR 785" in text and "Lost parcel" in text and "SA1" in text
+    buttons = r["telegram"]["reply_markup"]["inline_keyboard"]
+    assert buttons[0][0]["callback_data"] == "w:1:0" and buttons[-1][0]["callback_data"] == "o:1"
+
+    # A question -> ask_ai with ONLY his numbers (no name / Iqama / IBAN / phone)
+    r = say("ليش انخصم مني ١٠٠٠؟")
+    assert r["action"] == "ask_ai" and r["language"] == "ar"
+    facts = str(r["facts"])
+    assert r["facts"]["driver_id"] == "D3" and r["facts"]["net_salary"] == 785
+    assert "Test Driver Three" not in facts and "2000000003" not in facts and "0500000003" not in facts
+    assert r["fallback_text"] and r["telegram"]["chat_id"] == "555"
+
+    # Another chat can't see D3 - and can't use D3's buttons
+    assert say("/salary", chat="777")["telegram"]["text"].startswith("🔒")
+    assert say(callback="w:1:0", chat="777")["telegram"]["text"].startswith("🔒")
+
+    # "This is wrong" -> asks the reason -> next message opens a dispute in PayDesk
+    open_before = client.get("/api/disputes/count", headers=acc).json()["open"]
+    assert "ONE message" in say(callback="w:1:0")["telegram"]["text"]
+    r = say("I never lost this parcel, I delivered it")
+    assert "report #" in r["telegram"]["text"]
+    assert client.get("/api/disputes/count", headers=acc).json()["open"] == open_before + 1
+    item = client.get("/api/disputes", headers=acc).json()["items"][-1]
+    assert item["source"] == "telegram" and item["driver_id"] == "D3" and item["line"]["reference"] == "SA1"
+    # Same line twice -> clear message, no second dispute
+    say(callback="w:1:0")
+    assert "already reported" in say("still wrong!!")["telegram"]["text"]
+    # Old / made-up buttons
+    assert "old" in say(callback="w:1:9")["telegram"]["text"]
+    assert "old" in say(callback="w:999:0")["telegram"]["text"]
+
+    # Accountant answers in PayDesk -> n8n gets it to deliver on Telegram, once
+    assert client.get("/api/automation/telegram/answers", headers=key).json()["count"] == 0
+    res = client.post(f"/api/disputes/{item['id']}/answer", headers=acc,
+                      json={"decision": "rejected", "reply": "The parcel SA1 was signed as lost by the hub on 8 Oct."})
+    assert res.status_code == 200, res.text
+    ans = client.get("/api/automation/telegram/answers", headers=key).json()
+    assert ans["count"] == 1 and ans["answers"][0]["telegram"]["chat_id"] == "555"
+    assert "signed as lost" in ans["answers"][0]["telegram"]["text"]
+    client.post(f"/api/automation/telegram/answers/{item['id']}/delivered", headers=key)
+    assert client.get("/api/automation/telegram/answers", headers=key).json()["count"] == 0
+
+    # Salary messages (workflow 02): only linked drivers, only approved months, never twice
+    assert client.get("/api/automation/months/3/telegram-salary-messages", headers=key).status_code == 400
+    msgs = client.get("/api/automation/months/1/telegram-salary-messages", headers=key).json()
+    assert msgs["count"] == 1 and msgs["messages"][0]["driver_id"] == "D3"
+    assert "SAR 785" in msgs["messages"][0]["text_en"]
+    client.post("/api/automation/months/1/telegram-salary-messages/D3/result", headers=key, json={"status": "sent"})
+    assert client.get("/api/automation/months/1/telegram-salary-messages", headers=key).json()["count"] == 0
+
+    # Station emails finished -> PayDesk starts workflow 02 in n8n
+    called = []
+
+    class Ok:
+        status_code = 200
+
+    monkeypatch.setattr(settings, "n8n_salary_messages_url", "http://n8n.test/webhook/paydesk-salary-messages")
+    monkeypatch.setattr(automation.httpx, "post", lambda url, json, timeout: called.append(json) or Ok())
+    assert client.post("/api/automation/months/1/run-finished", headers=key).json()["status"] == "done"
+    assert called and called[0]["month_id"] == 1 and called[0]["linked_drivers"] == 1
+
+    # Bot address comes from .env (token never in n8n files)
+    assert client.get("/api/automation/telegram/bot", headers=key).status_code == 503
+    monkeypatch.setattr(settings, "telegram_bot_token", "123:ABC")
+    bot = client.get("/api/automation/telegram/bot", headers=key).json()
+    assert bot["api"] == "https://api.telegram.org/bot123:ABC" and bot["offset"] == 0
+
+    # Telegram offset only moves forward
+    assert client.put("/api/automation/telegram/offset", headers=key, json={"offset": 50}).json()["offset"] == 50
+    assert client.put("/api/automation/telegram/offset", headers=key, json={"offset": 10}).json()["offset"] == 50
+
+    # Unlink -> nothing any more
+    assert "no longer linked" in say("/unlink")["telegram"]["text"]
+    assert say("/salary")["telegram"]["text"].startswith("🔒")

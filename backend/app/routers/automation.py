@@ -8,20 +8,24 @@ Automation 1 (station emails) uses:
     GET  /api/automation/outbox/{email_id}/attachment   the station's Excel file
     POST /api/automation/outbox/{email_id}/result       "sent" or "failed" for one station
     POST /api/automation/months/{id}/run-finished       end of the run -> totals for the summary email
+                                                        (+ starts automation 2: Telegram salary messages)
+
+Automation 2 (Telegram) lives in telegram.py.
 """
 
 import io
 import secrets
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..config import settings
-from ..database import get_db
-from ..models import OutboxEmail, PayrollMonth, Salary
+from ..database import SessionLocal, get_db
+from ..models import OutboxEmail, PayrollMonth, Salary, TelegramLink
 from ..payroll.engine import money
 from .distribution import WAITING, XLSX, _now, _status, month_name, run_seconds
 
@@ -118,8 +122,27 @@ def result(email_id: int, body: ResultIn, db: Session = Depends(get_db)):
     return {"ok": True, "status": e.status}
 
 
+def call_salary_messages(month_id: int) -> None:
+    """Automation 2: after all station emails are sent, n8n messages every linked driver on Telegram."""
+    with SessionLocal() as db:
+        month = db.get(PayrollMonth, month_id)
+        linked = db.scalar(select(func.count()).select_from(Salary)
+                           .join(TelegramLink, TelegramLink.driver_id == Salary.driver_id)
+                           .where(Salary.month_id == month_id)) or 0
+    if month is None or not linked:
+        return
+    payload = {"source": "PayDesk", "event": "salary_messages", "month_id": month_id,
+               "period": month.period, "month_name": month_name(month.period), "linked_drivers": linked}
+    try:
+        res = httpx.post(settings.n8n_salary_messages_url, json=payload, timeout=20)
+        note = None if res.status_code < 400 else f"n8n answered with error {res.status_code}"
+    except httpx.HTTPError:
+        note = "Can't reach n8n"
+    print(f"[automation 2] {month.period}: " + (note or f"salary messages started ({linked} linked drivers)"))
+
+
 @router.post("/months/{month_id}/run-finished")
-def run_finished(month_id: int, db: Session = Depends(get_db)):
+def run_finished(month_id: int, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     month = _month(db, month_id)
     emails = db.scalars(select(OutboxEmail).where(OutboxEmail.month_id == month.id)).all()
     statuses = [_status(e) for e in emails]
@@ -134,6 +157,8 @@ def run_finished(month_id: int, db: Session = Depends(get_db)):
         month.emails_run_note = None
     db.commit()
     print(f"[automation 1] {month.period}: finished - {sent} sent, {failed} failed, {run_seconds(month)} s")
+    if month.emails_run_status == "done" and settings.n8n_salary_messages_url:
+        tasks.add_task(call_salary_messages, month.id)
     return {
         "period": month.period, "month_name": month_name(month.period),
         "stations": len(emails), "sent": sent, "failed": failed, "waiting": waiting,
