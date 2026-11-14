@@ -136,7 +136,7 @@
     and the sign-in page. Shahwaiz: "Now that looks good."
 - **Next action (all 3 automations work):**
   1. Git save.
-  2. Publish workflow 02 (salary message after automation 1) – then one FULL demo run: fresh demo database →
+  2. Workflow 02 is **published** (14 Nov ~03:00, not tested yet) – one FULL demo run: fresh demo database →
      approve October → 50 station emails → salary message on Telegram → question → ❌ Wrong → answer →
      Payday → Paid → ✅/❌. Record the demo video in that run (empty demo inbox first).
   3. Write the LinkedIn post (Sunday).
