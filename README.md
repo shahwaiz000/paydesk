@@ -94,5 +94,5 @@ Import the workflows from the `n8n/` folder – setup notes are in [`n8n/README.
 
 ---
 
-**Built by Shahwaiz Sulehri** – Finance Operations, Riyadh ·
-[LinkedIn](https://www.linkedin.com/in/shahwaiz-sulehri-360baa302/) · [GitHub](https://github.com/shahwaiz000)
+**Built by Shahwaiz Bilal** – Finance Operations, Riyadh ·
+[LinkedIn](https://www.linkedin.com/in/shahwaiz-bilal-360baa302/) · [GitHub](https://github.com/shahwaiz000)
